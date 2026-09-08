@@ -1,0 +1,18 @@
+# Generated build and distribution output
+/build/
+/build-wpf/
+/packaged/
+/wpf/bin/
+/wpf/obj/
+
+# Python runtime cache
+__pycache__/
+*.py[cod]
+
+# Local IDE and OS files
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+Desktop.ini

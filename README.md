@@ -39,6 +39,8 @@
 
 배포 패키지 전체도 저장소의 `packaged/Tosun Flux`에 포함하며, 대용량 파일은 Git LFS로 관리합니다.
 
+설치파일은 `make-installer.ps1`로 생성하며 `C:\Program Files\Tosun Flux`에 설치됩니다. 설치 시 관리자 권한이 필요합니다.
+
 ## 검증
 
 ```powershell

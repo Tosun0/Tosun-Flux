@@ -4,6 +4,8 @@
 /packaged/
 /wpf/bin/
 /wpf/obj/
+/installer/bin/
+/installer/obj/
 
 # Python runtime cache
 __pycache__/

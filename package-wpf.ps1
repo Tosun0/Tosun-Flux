@@ -44,8 +44,26 @@ Get-ChildItem -LiteralPath $popplerBin -File | ForEach-Object {
     --distpath $backendDistRoot `
     --workpath $backendBuildRoot `
     --specpath $backendBuildRoot `
+    --exclude-module numpy `
+    --exclude-module scipy `
     @binaryArgs `
     (Join-Path $projectRoot 'backend_cli.py')
+
+# Poppler's ICU runtime is copied once as a PyInstaller dependency and once
+# beside the bundled pdftoppm tools. Keep the vendor copy used by bundled_tool.
+$backendInternalRoot = Join-Path $backendDistRoot 'TosunConverter.Backend\_internal'
+$popplerOnlyDuplicates = @('icudt78.dll', 'icuin78.dll', 'icuuc78.dll', 'icutu78.dll', 'poppler.dll')
+foreach ($name in $popplerOnlyDuplicates) {
+    $rootFile = Join-Path $backendInternalRoot $name
+    $vendorFile = Join-Path $backendInternalRoot (Join-Path 'vendor' $name)
+    if ((Test-Path -LiteralPath $rootFile) -and (Test-Path -LiteralPath $vendorFile)) {
+        $rootHash = (Get-FileHash -LiteralPath $rootFile -Algorithm SHA256).Hash
+        $vendorHash = (Get-FileHash -LiteralPath $vendorFile -Algorithm SHA256).Hash
+        if ($rootHash -eq $vendorHash) {
+            Remove-Item -LiteralPath $rootFile -Force
+        }
+    }
+}
 
 $readme = @"
 # Tosun Flux

@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Tosun Flux Setup</AssemblyName>
+    <Company>Tosun</Company>
+    <Authors>Tosun</Authors>
+    <Product>Tosun Flux</Product>
+    <Description>Tosun Flux 설치 프로그램</Description>
+    <Version>0.3.0</Version>
     <ApplicationIcon>..\assets\Tosun.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishSingleFile>true</PublishSingleFile>

@@ -39,7 +39,7 @@
 
 배포 패키지 전체도 저장소의 `packaged/Tosun Flux`에 포함하며, 대용량 파일은 Git LFS로 관리합니다.
 
-설치파일은 `make-installer.ps1`로 생성하며 `C:\Program Files\Tosun Flux`에 설치됩니다. 설치 시 관리자 권한이 필요합니다.
+설치파일은 `make-installer.ps1`로 생성합니다. 설치 프로그램에서 설치 폴더를 직접 선택할 수 있으며, 기본 위치는 `C:\Program Files\Tosun Flux`입니다. 설치 완료 화면에서 바탕화면·시작 메뉴 바로가기를 선택적으로 추가할 수 있고, Windows의 프로그램 설치 및 제거 목록에 게시자 `Tosun`, 버전 `0.3.0`으로 등록됩니다. 설치 시 관리자 권한이 필요합니다.
 
 ## 검증
 

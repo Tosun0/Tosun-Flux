@@ -13,6 +13,8 @@ namespace TosunConverter.Wpf;
 
 public partial class MainWindow : Window
 {
+    private const string SettingsKeyPath = @"Software\Tosun\Tosun Flux";
+    private const string OutputPathValueName = "OutputPath";
     private readonly List<string> _files = [];
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,7 +31,8 @@ public partial class MainWindow : Window
         OptimizationBox.SelectedIndex = 0;
         ResolutionBox.SelectedIndex = 0;
         AspectBox.SelectedIndex = 0;
-        OutputPath.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Tosun Flux-Output");
+        OutputPath.Text = LoadOutputPath();
+        Closed += (_, _) => SaveOutputPath();
         SourceInitialized += (_, _) => EnableAcrylic();
         UpdateVisualSettings();
     }
@@ -158,9 +161,15 @@ public partial class MainWindow : Window
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "저장 위치 선택", InitialDirectory = OutputPath.Text };
+        var initialDirectory = Directory.Exists(OutputPath.Text)
+            ? OutputPath.Text
+            : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        var dialog = new OpenFolderDialog { Title = "저장 위치 선택", InitialDirectory = initialDirectory };
         if (dialog.ShowDialog(this) == true)
+        {
             OutputPath.Text = dialog.FolderName;
+            SaveOutputPath();
+        }
     }
 
     private async Task RefreshTargetsAsync()
@@ -205,6 +214,7 @@ public partial class MainWindow : Window
         if (_files.Count == 0 || TargetBox.SelectedItem is not string selectedTarget)
             return;
 
+        SaveOutputPath();
         ConvertButton.IsEnabled = false;
         Progress.Maximum = _files.Count;
         Progress.Value = 0;
@@ -286,6 +296,39 @@ public partial class MainWindow : Window
     {
         LogText.AppendText(text + Environment.NewLine);
         LogText.ScrollToEnd();
+    }
+
+    private static string LoadOutputPath()
+    {
+        var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Tosun Flux-Output");
+        try
+        {
+            using var settings = Registry.CurrentUser.OpenSubKey(SettingsKeyPath);
+            return settings?.GetValue(OutputPathValueName) as string is { Length: > 0 } savedPath
+                ? savedPath
+                : defaultPath;
+        }
+        catch (Exception)
+        {
+            return defaultPath;
+        }
+    }
+
+    private void SaveOutputPath()
+    {
+        var outputPath = OutputPath.Text.Trim();
+        if (outputPath.Length == 0)
+            return;
+
+        try
+        {
+            using var settings = Registry.CurrentUser.CreateSubKey(SettingsKeyPath);
+            settings?.SetValue(OutputPathValueName, outputPath);
+        }
+        catch (Exception)
+        {
+            // 설정 저장 실패는 변환 자체를 막지 않습니다.
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -16,6 +16,9 @@ if (Test-Path -LiteralPath $payloadArchive) {
 if (Test-Path -LiteralPath $installerBuild) {
     Remove-Item -LiteralPath $installerBuild -Recurse -Force
 }
+if (Test-Path -LiteralPath $installerPath) {
+    Remove-Item -LiteralPath $installerPath -Force
+}
 
 Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $payloadArchive -CompressionLevel Optimal -Force
 dotnet publish $installerProject -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PayloadPath="$payloadArchive" -o $installerBuild

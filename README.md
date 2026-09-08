@@ -37,6 +37,8 @@
 
 생성 위치: `packaged/Tosun Flux/Tosun Flux.exe`
 
+배포 패키지 전체도 저장소의 `packaged/Tosun Flux`에 포함하며, 대용량 파일은 Git LFS로 관리합니다.
+
 ## 검증
 
 ```powershell

@@ -21,6 +21,9 @@ public partial class MainWindow : Window
     private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private UpdateInfo? _availableUpdate;
     private bool _allowClose;
+    private bool _customResolutionExpanded;
+    private double _heightBeforeCustomResolution;
+    private const double CustomResolutionWindowHeight = 960;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",
@@ -212,7 +215,19 @@ public partial class MainWindow : Window
         OptimizationBox.IsEnabled = supportsVisualOptions;
         ResolutionBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution;
-        CustomSizePanel.Visibility = supportsVisualOptions && !pdfCompressionOnly && customResolution ? Visibility.Visible : Visibility.Collapsed;
+        var showCustomResolution = supportsVisualOptions && !pdfCompressionOnly && customResolution;
+        CustomSizePanel.Visibility = showCustomResolution ? Visibility.Visible : Visibility.Collapsed;
+        if (showCustomResolution && !_customResolutionExpanded)
+        {
+            _heightBeforeCustomResolution = Height;
+            Height = Math.Max(Height, CustomResolutionWindowHeight);
+            _customResolutionExpanded = true;
+        }
+        else if (!showCustomResolution && _customResolutionExpanded)
+        {
+            Height = _heightBeforeCustomResolution > 0 ? _heightBeforeCustomResolution : Height;
+            _customResolutionExpanded = false;
+        }
         FitChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         FillChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         StretchChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;

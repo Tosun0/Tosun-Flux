@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -22,9 +23,10 @@ public partial class MainWindow : Window
     private UpdateInfo? _availableUpdate;
     private bool _allowClose;
     private bool _syncingCustomSizeFields;
-    private int? _sourceWidth;
-    private int? _sourceHeight;
-    private string? _sourceFrameRate;
+    private readonly List<SourceMetadata> _sourceMetadata = [];
+    private int? SourceWidth => _sourceMetadata.FirstOrDefault()?.Width;
+    private int? SourceHeight => _sourceMetadata.FirstOrDefault()?.Height;
+    private double? SourceFrameRate => _sourceMetadata.FirstOrDefault()?.FrameRate;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",
@@ -170,9 +172,7 @@ public partial class MainWindow : Window
     private async void ClearFiles_Click(object sender, RoutedEventArgs e)
     {
         _files.Clear();
-        _sourceWidth = null;
-        _sourceHeight = null;
-        _sourceFrameRate = null;
+        _sourceMetadata.Clear();
         FilesList.Items.Clear();
         TargetBox.Items.Clear();
         TargetBox.SelectedIndex = -1;
@@ -199,9 +199,7 @@ public partial class MainWindow : Window
         FilesList.Items.RemoveAt(index);
         if (_files.Count == 0)
         {
-            _sourceWidth = null;
-            _sourceHeight = null;
-            _sourceFrameRate = null;
+            _sourceMetadata.Clear();
             TargetBox.Items.Clear();
             TargetBox.SelectedIndex = -1;
             FileHint.Text = "지원 형식은 파일을 추가하면 자동으로 안내됩니다.";
@@ -263,8 +261,8 @@ public partial class MainWindow : Window
             : pdfCompressionOnly
                 ? "PDF 텍스트는 유지하고 내부 이미지와 구조를 최적화합니다."
                 : "원본은 유지하고 새 파일로 저장합니다.";
-        FrameRateBox.ToolTip = _sourceFrameRate is { Length: > 0 } sourceFrameRate
-            ? $"원본 프레임: {sourceFrameRate} fps"
+        FrameRateBox.ToolTip = SourceFrameRate is double sourceFrameRate && sourceFrameRate > 0
+            ? $"원본 프레임: {sourceFrameRate:0.###} fps"
             : "영상의 출력 프레임을 선택합니다.";
         UpdateCustomSizePreview();
         UpdateEstimatedSize();
@@ -303,8 +301,11 @@ public partial class MainWindow : Window
         if (_files.Count == 0 || ResolutionBox.SelectedIndex == 7)
             return null;
 
-        var sourceWidth = _sourceWidth ?? 1920;
-        var sourceHeight = _sourceHeight ?? 1080;
+        return GetPreviewDimensions(SourceWidth ?? 1920, SourceHeight ?? 1080);
+    }
+
+    private (int Width, int Height) GetPreviewDimensions(int sourceWidth, int sourceHeight)
+    {
         var resolution = ResolutionBox.SelectedIndex switch
         {
             1 => (Width: 4096, Height: 2160),
@@ -341,7 +342,7 @@ public partial class MainWindow : Window
 
     private static int Even(int value) => Math.Max(2, value / 2 * 2);
 
-    private (int Width, int Height)? GetActivePreviewDimensions()
+    private (int Width, int Height)? GetActivePreviewDimensions(int sourceWidth, int sourceHeight)
     {
         if (ResolutionBox.SelectedIndex == 7 &&
             int.TryParse(CustomWidthBox.Text, out var width) &&
@@ -351,7 +352,7 @@ public partial class MainWindow : Window
             return (width, height);
         }
 
-        return GetPreviewDimensions();
+        return GetPreviewDimensions(sourceWidth, sourceHeight);
     }
 
     private void UpdateEstimatedSize()
@@ -367,7 +368,19 @@ public partial class MainWindow : Window
         {
             var sourceBytes = _files.Sum(path => new FileInfo(path).Length);
             OriginalSizeText.Text = $"원본 용량 · {FormatBytes(sourceBytes)}";
-            var multiplier = target.Key switch
+            var isUnchangedConversion = target.Key is not ("png-sequence" or "jpg-sequence") &&
+                OptimizationBox.SelectedIndex == 0 &&
+                ResolutionBox.SelectedIndex == 0 &&
+                AspectBox.SelectedIndex == 0 &&
+                FrameRateBox.SelectedIndex == 0 &&
+                _files.All(path => NormalizeFormat(Path.GetExtension(path)) == target.Key);
+            if (isUnchangedConversion)
+            {
+                EstimatedSizeText.Text = $"예상 용량 · {FormatBytes(sourceBytes)} (원본 동일)";
+                return;
+            }
+
+            var formatMultiplier = target.Key switch
             {
                 "png" => 0.95,
                 "jpg" => 0.55,
@@ -387,7 +400,7 @@ public partial class MainWindow : Window
                 _ => 1.0,
             };
 
-            multiplier *= OptimizationBox.SelectedIndex switch
+            var optimizationMultiplier = OptimizationBox.SelectedIndex switch
             {
                 1 => 1.1,
                 2 => 0.8,
@@ -396,29 +409,58 @@ public partial class MainWindow : Window
             };
 
             var isVideoTarget = target.Key is "mp4" or "webm" or "mov" or "mkv" or "avi" or "gif" or "png-sequence" or "jpg-sequence";
-            if (target.Key != "pdf" && _sourceWidth is > 0 && _sourceHeight is > 0 && GetActivePreviewDimensions() is { } preview)
+            var isSequenceTarget = target.Key is "png-sequence" or "jpg-sequence";
+            var estimate = 0d;
+            for (var index = 0; index < _files.Count; index++)
             {
-                var sourceArea = (double)_sourceWidth.Value * _sourceHeight.Value;
-                multiplier *= preview.Width * (double)preview.Height / sourceArea;
+                var sourceFileBytes = new FileInfo(_files[index]).Length;
+                var metadata = index < _sourceMetadata.Count ? _sourceMetadata[index] : null;
+                if (isSequenceTarget && metadata is { Width: > 0, Height: > 0, Duration: > 0 })
+                {
+                    var preview = GetActivePreviewDimensions(metadata.Width.Value, metadata.Height.Value) ?? (metadata.Width.Value, metadata.Height.Value);
+                    var frameRate = SelectedFrameRate() ?? metadata.FrameRate ?? 30;
+                    var bytesPerPixel = target.Key == "png-sequence" ? 0.5 : 0.12;
+                    estimate += preview.Width * (double)preview.Height * metadata.Duration.Value * frameRate * bytesPerPixel * optimizationMultiplier;
+                    continue;
+                }
+
+                var itemEstimate = sourceFileBytes * formatMultiplier * optimizationMultiplier;
+                if (target.Key != "pdf" && metadata is { Width: > 0, Height: > 0 })
+                {
+                    var preview = GetActivePreviewDimensions(metadata.Width.Value, metadata.Height.Value);
+                    if (preview is not null)
+                    {
+                        var sourceArea = (double)metadata.Width.Value * metadata.Height.Value;
+                        itemEstimate *= preview.Value.Width * (double)preview.Value.Height / sourceArea;
+                    }
+                }
+
+                if (isVideoTarget && metadata?.FrameRate is double sourceFrameRate && sourceFrameRate > 0 && SelectedFrameRate() is double outputFrameRate && outputFrameRate > 0)
+                    itemEstimate *= outputFrameRate / sourceFrameRate;
+                estimate += itemEstimate;
             }
 
-            if (isVideoTarget && double.TryParse(_sourceFrameRate, out var sourceFrameRate) && sourceFrameRate > 0 && FrameRateBox.SelectedIndex > 0 && double.TryParse(FrameRateBox.SelectedItem?.ToString(), out var outputFrameRate))
-                multiplier *= outputFrameRate / sourceFrameRate;
-
-            var isUnchangedConversion = target.Key is not ("png-sequence" or "jpg-sequence") &&
-                OptimizationBox.SelectedIndex == 0 &&
-                ResolutionBox.SelectedIndex == 0 &&
-                AspectBox.SelectedIndex == 0 &&
-                FrameRateBox.SelectedIndex == 0 &&
-                _files.All(path => Path.GetExtension(path).Equals($".{target.Key}", StringComparison.OrdinalIgnoreCase));
-            var estimate = isUnchangedConversion ? sourceBytes : Math.Max(1024, sourceBytes * Math.Max(0.05, multiplier));
-            EstimatedSizeText.Text = $"예상 용량 · 약 {FormatBytes(estimate)}";
+            var uncertainty = isSequenceTarget ? 0.55
+                : isVideoTarget ? 0.4
+                : target.Key == "pdf" || _files.All(path => Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) ? 0.45
+                : 0.25;
+            var lower = Math.Max(1, estimate * (1 - uncertainty));
+            var upper = Math.Max(lower, estimate * (1 + uncertainty));
+            EstimatedSizeText.Text = $"예상 용량 · {FormatBytes(lower)}~{FormatBytes(upper)}";
         }
         catch (IOException)
         {
             OriginalSizeText.Text = "원본 용량을 읽지 못했습니다.";
             EstimatedSizeText.Text = "예상 용량을 계산하지 못했습니다.";
         }
+    }
+
+    private double? SelectedFrameRate()
+    {
+        return FrameRateBox.SelectedIndex > 0 &&
+               double.TryParse(FrameRateBox.SelectedItem?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var frameRate)
+            ? frameRate
+            : null;
     }
 
     private static string FormatBytes(double bytes)
@@ -432,6 +474,18 @@ public partial class MainWindow : Window
         }
 
         return unit == 0 ? $"{bytes:0} {units[unit]}" : $"{bytes:0.0} {units[unit]}";
+    }
+
+    private static string NormalizeFormat(string extension)
+    {
+        var format = extension.TrimStart('.').ToLowerInvariant();
+        return format switch
+        {
+            "jpeg" => "jpg",
+            "tif" => "tiff",
+            "markdown" => "md",
+            _ => format,
+        };
     }
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
@@ -450,9 +504,7 @@ public partial class MainWindow : Window
     private async Task RefreshTargetsAsync()
     {
         TargetBox.Items.Clear();
-        _sourceWidth = null;
-        _sourceHeight = null;
-        _sourceFrameRate = null;
+        _sourceMetadata.Clear();
         ConvertButton.IsEnabled = false;
         if (_files.Count == 0)
             return;
@@ -475,15 +527,21 @@ public partial class MainWindow : Window
             if (process.ExitCode != 0)
                 throw new InvalidOperationException((await errorTask).Trim());
             using var document = JsonDocument.Parse(output.Trim());
-            if (document.RootElement.TryGetProperty("metadata", out var metadata) && metadata.GetArrayLength() > 0)
+            if (document.RootElement.TryGetProperty("metadata", out var metadata))
             {
-                var first = metadata[0];
-                if (first.TryGetProperty("width", out var width) && width.ValueKind == JsonValueKind.Number)
-                    _sourceWidth = width.GetInt32();
-                if (first.TryGetProperty("height", out var height) && height.ValueKind == JsonValueKind.Number)
-                    _sourceHeight = height.GetInt32();
-                if (first.TryGetProperty("fps", out var frameRate) && frameRate.ValueKind == JsonValueKind.String)
-                    _sourceFrameRate = frameRate.GetString();
+                foreach (var item in metadata.EnumerateArray())
+                {
+                    int? width = item.TryGetProperty("width", out var widthValue) && widthValue.ValueKind == JsonValueKind.Number ? widthValue.GetInt32() : null;
+                    int? height = item.TryGetProperty("height", out var heightValue) && heightValue.ValueKind == JsonValueKind.Number ? heightValue.GetInt32() : null;
+                    double? frameRate = item.TryGetProperty("fps", out var frameRateValue) && frameRateValue.ValueKind == JsonValueKind.String &&
+                                    double.TryParse(frameRateValue.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedFrameRate)
+                        ? parsedFrameRate
+                        : null;
+                    double? duration = item.TryGetProperty("duration", out var durationValue) && durationValue.ValueKind == JsonValueKind.Number
+                        ? durationValue.GetDouble()
+                        : null;
+                    _sourceMetadata.Add(new SourceMetadata(width, height, frameRate, duration));
+                }
             }
             foreach (var target in document.RootElement.GetProperty("targets").EnumerateArray())
             {
@@ -553,6 +611,7 @@ public partial class MainWindow : Window
         foreach (var file in _files)
             startInfo.ArgumentList.Add(file);
 
+        long outputBytes = 0;
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("변환 백엔드를 실행할 수 없습니다.");
@@ -573,8 +632,10 @@ public partial class MainWindow : Window
                     if (error.ValueKind == JsonValueKind.Null)
                     {
                         success++;
-                        var names = root.GetProperty("outputs").EnumerateArray().Select(item => Path.GetFileName(item.GetString()));
-                        AppendLog($"완료: {source} → {string.Join(", ", names)}");
+                        var outputs = root.GetProperty("outputs").EnumerateArray().Select(item => item.GetString()).Where(path => path is not null).Cast<string>().ToArray();
+                        var convertedBytes = outputs.Where(File.Exists).Sum(path => new FileInfo(path).Length);
+                        outputBytes += convertedBytes;
+                        AppendLog($"완료: {source} → {string.Join(", ", outputs.Select(Path.GetFileName))} · {FormatBytes(convertedBytes)}");
                     }
                     else
                     {
@@ -594,6 +655,8 @@ public partial class MainWindow : Window
             {
                 StatusText.Text = $"변환 완료 · {success}/{_files.Count}개";
             }
+            if (outputBytes > 0)
+                EstimatedSizeText.Text = $"결과 용량 · {FormatBytes(outputBytes)}";
         }
         catch (Exception error)
         {
@@ -737,7 +800,11 @@ MP3 · WAV · FLAC · M4A · OGG 형식 간 변환
 
 해상도, 화면비, 맞춤 방식, 프레임 변환은 해당 파일 종류에서만 표시됩니다.
 원본 설정과 같은 확장자를 선택하면 원본 파일을 그대로 저장합니다.
+다른 이미지 형식으로 바꿀 때 원본 유지 최적화는 고품질 설정을 사용합니다.
+예상 용량은 파일별 해상도·프레임과 압축 편차를 반영한 범위이며, 완료 후 실제 결과 용량으로 바뀝니다.
 """;
+
+    private sealed record SourceMetadata(int? Width, int? Height, double? FrameRate, double? Duration);
 
     private sealed record TargetChoice(string Label, string Key)
     {
@@ -820,7 +887,7 @@ MP3 · WAV · FLAC · M4A · OGG 형식 간 변환
     {
         if (_availableUpdate is null)
             return;
-        UpdateButton.IsEnabled = false;
+        SetUpdating(true);
         Progress.Maximum = 100;
         Progress.Value = 0;
         var progress = new Progress<int>(value =>
@@ -842,10 +909,18 @@ MP3 · WAV · FLAC · M4A · OGG 형식 간 변환
         }
         catch (Exception error)
         {
-            UpdateButton.IsEnabled = true;
+            SetUpdating(false);
             StatusText.Text = "업데이트를 설치하지 못했습니다.";
             System.Windows.MessageBox.Show(this, error.Message, "업데이트", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void SetUpdating(bool updating)
+    {
+        UpdateButton.IsEnabled = !updating;
+        CheckUpdateButton.IsEnabled = !updating;
+        HelpButton.IsEnabled = !updating;
+        WorkspaceGrid.IsEnabled = !updating;
     }
 
     private static string LoadOutputPath()

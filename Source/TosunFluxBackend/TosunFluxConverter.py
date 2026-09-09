@@ -83,7 +83,7 @@ def bundled_tool(name: str, system_name: str | None = None) -> Path | None:
 
 
 def source_metadata(path: Path) -> dict[str, object]:
-    metadata: dict[str, object] = {"path": str(path), "kind": file_kind(path), "width": None, "height": None, "fps": None}
+    metadata: dict[str, object] = {"path": str(path), "kind": file_kind(path), "width": None, "height": None, "fps": None, "duration": None}
     try:
         if metadata["kind"] == "image":
             with Image.open(path) as image:
@@ -105,10 +105,14 @@ def source_metadata(path: Path) -> dict[str, object]:
         probe = completed.stderr
         size_match = re.search(r"Video:.*?(\d{2,6})x(\d{2,6})", probe, re.IGNORECASE | re.DOTALL)
         fps_match = re.search(r"(\d+(?:\.\d+)?)\s+(?:fps|tbr)", probe, re.IGNORECASE)
+        duration_match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", probe, re.IGNORECASE)
         if size_match:
             metadata["width"], metadata["height"] = int(size_match.group(1)), int(size_match.group(2))
         if fps_match:
             metadata["fps"] = fps_match.group(1)
+        if duration_match:
+            hours, minutes, seconds = duration_match.groups()
+            metadata["duration"] = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     except (OSError, ValueError):
         pass
     return metadata
@@ -183,8 +187,9 @@ def unique_sequence_pattern(directory: Path, stem: str, extension: str) -> tuple
 
 
 def _is_identity_conversion(source: Path, target: str, options: ConversionOptions) -> bool:
+    source_format = {"jpeg": "jpg", "tif": "tiff", "markdown": "md"}.get(source.suffix.lower().lstrip("."), source.suffix.lower().lstrip("."))
     return (
-        source.suffix.lower() == f".{target.lower()}"
+        source_format == target.lower()
         and options.optimize == "source"
         and options.resolution == "source"
         and options.aspect == "source"
@@ -266,7 +271,11 @@ def _write_image(image: Image.Image, destination: Path, target: str, options: Co
         converted = image.convert("RGB")
     save_options: dict[str, object] = {}
     quality = {"quality": 92, "balanced": 82, "small": 68}.get(options.optimize)
-    if quality and target in {"jpg", "webp"}:
+    if options.optimize == "source" and target == "jpg":
+        save_options.update(quality=95, subsampling=0)
+    elif options.optimize == "source" and target == "webp":
+        save_options.update(lossless=True)
+    elif quality and target in {"jpg", "webp"}:
         save_options.update(quality=quality, optimize=True)
     elif options.optimize != "source" and target == "png":
         save_options.update(optimize=True, compress_level={"quality": 6, "balanced": 8, "small": 9}[options.optimize])
@@ -327,7 +336,8 @@ def _convert_pdf(source: Path, output_dir: Path, target: str, options: Conversio
         options.resolution,
         {"quality": 220, "balanced": 150, "small": 110}.get(options.optimize, 150),
     )
-    args = [str(tool), "-r", str(dpi), f"-{target}", str(source), str(output_stem)]
+    render_format = "jpeg" if target == "jpg" else target
+    args = [str(tool), "-r", str(dpi), f"-{render_format}", str(source), str(output_stem)]
     completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if completed.returncode:
         message = completed.stderr.strip() or "PDF 변환에 실패했습니다."
@@ -379,7 +389,9 @@ def _convert_media(source: Path, output_dir: Path, target: str, options: Convers
             destination, sequence_stem = unique_sequence_pattern(output_dir, source.stem, extension)
             args.extend(["-an"])
             if extension == "jpg":
-                args.extend(["-q:v", "2"])
+                args.extend(["-q:v", {"source": "2", "quality": "2", "balanced": "4", "small": "7"}[options.optimize]])
+            elif options.optimize != "source":
+                args.extend(["-compression_level", {"quality": "4", "balanced": "7", "small": "9"}[options.optimize]])
             args.append(str(destination))
             completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if completed.returncode:

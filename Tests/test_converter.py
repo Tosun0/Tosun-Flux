@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend"))
 from PIL import Image
 
-from TosunFluxConverter import ConversionOptions, common_targets, convert_file, supported_targets, target_dimensions
+from TosunFluxConverter import ConversionOptions, bundled_tool, common_targets, convert_file, supported_targets, target_dimensions
 
 
 class ConverterTests(unittest.TestCase):
@@ -34,6 +35,18 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(target_dimensions((1920, 1080), ConversionOptions(resolution="4k")), (3840, 2160))
         self.assertEqual(target_dimensions((1920, 1080), ConversionOptions(resolution="sd")), (720, 404))
 
+    def test_backend_cli_accepts_extended_resolution_presets(self) -> None:
+        backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
+        for preset in ("4k-uhd", "sd"):
+            completed = subprocess.run(
+                [sys.executable, str(backend), "convert", "--output", "out", "--target", "png", "--resolution", preset, "missing.png"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            self.assertNotEqual(completed.returncode, 2, completed.stderr)
+
     def test_image_optimization_and_resize(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -52,6 +65,14 @@ class ConverterTests(unittest.TestCase):
             result = convert_file(source, root / "out", "png", ConversionOptions())
             self.assertEqual(result.outputs[0].read_bytes(), source.read_bytes())
 
+    def test_jpeg_alias_preserves_original_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.jpeg"
+            Image.new("RGB", (64, 64), "cyan").save(source, "JPEG", quality=91)
+            result = convert_file(source, root / "out", "jpg")
+            self.assertEqual(source.read_bytes(), result.outputs[0].read_bytes())
+
     def test_pdf_can_be_optimized_without_rasterizing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -60,6 +81,17 @@ class ConverterTests(unittest.TestCase):
             result = convert_file(source, root / "out", "pdf", ConversionOptions(optimize="balanced"))
             self.assertTrue(result.outputs[0].is_file())
             self.assertGreater(result.outputs[0].stat().st_size, 0)
+
+    @unittest.skipIf(bundled_tool("pdftoppm.exe", "pdftoppm") is None, "Poppler is unavailable")
+    def test_pdf_can_render_to_jpg(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "document.pdf"
+            Image.new("RGB", (320, 240), "white").save(source, "PDF")
+            result = convert_file(source, root / "out", "jpg")
+            self.assertTrue(result.outputs)
+            with Image.open(result.outputs[0]) as converted:
+                self.assertEqual(converted.format, "JPEG")
 
     def test_csv_json_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

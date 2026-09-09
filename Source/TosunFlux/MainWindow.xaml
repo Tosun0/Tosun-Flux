@@ -220,10 +220,10 @@
                     <Button x:Name="HelpButton" Content="?" Width="34" Height="34" Padding="0" FontSize="17" FontWeight="Black" Background="{StaticResource SecondaryBrush}" Foreground="{StaticResource SecondaryTextBrush}" ToolTip="변환 형식 도움말" Click="HelpButton_Click" />
                 </StackPanel>
                 <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.8." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
+                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.9." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
             </Grid>
 
-            <Grid Grid.Row="2">
+            <Grid x:Name="WorkspaceGrid" Grid.Row="2">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="1.55*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="1*" /></Grid.ColumnDefinitions>
 
                 <Border Grid.Column="0" Style="{StaticResource GlassCard}">
@@ -327,7 +327,7 @@
                         </Grid>
                         <TextBlock x:Name="OptimizationHint" Grid.Row="17" Text="이미지 · 영상 · PDF에 적용됩니다." Margin="2,8,0,0" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                         <TextBlock x:Name="OriginalSizeText" Grid.Row="18" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,2,8" FontSize="11" FontWeight="Light" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock x:Name="EstimatedSizeText" Grid.Row="18" Text="예상 용량은 파일을 추가하면 표시됩니다." HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="2,0,2,8" FontSize="11" FontWeight="Light" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="변환 방식에 따른 대략적인 예상치입니다." />
+                        <TextBlock x:Name="EstimatedSizeText" Grid.Row="18" Text="예상 용량은 파일을 추가하면 표시됩니다." HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="2,0,2,8" FontSize="11" FontWeight="Light" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="파일별 해상도·프레임과 형식별 압축 편차를 반영한 예상 범위입니다." />
                         <Button x:Name="ConvertButton" Grid.Row="19" Content="변환 시작" Height="50" IsEnabled="False" Click="Convert_Click" />
                     </Grid>
                 </Border>

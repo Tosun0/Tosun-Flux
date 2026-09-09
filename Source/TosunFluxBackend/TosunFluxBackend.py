@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from TosunFluxConverter import ConversionOptions, common_targets, convert_files, source_metadata
+from TosunFluxConverter import RESOLUTIONS, ConversionOptions, common_targets, convert_files, source_metadata
 
 
 def emit(payload: dict[str, object]) -> None:
@@ -24,7 +24,7 @@ def main() -> int:
     convert_parser.add_argument("--output", required=True)
     convert_parser.add_argument("--target", required=True)
     convert_parser.add_argument("--optimize", choices=("source", "quality", "balanced", "small"), default="source")
-    convert_parser.add_argument("--resolution", choices=("source", "4k", "qhd", "fhd", "hd"), default="source")
+    convert_parser.add_argument("--resolution", choices=("source", *RESOLUTIONS), default="source")
     convert_parser.add_argument("--aspect", choices=("source", "16:9", "9:16", "1:1", "4:3", "3:4"), default="source")
     convert_parser.add_argument("--fit", choices=("fit", "fill", "stretch"), default="fit")
     convert_parser.add_argument("--width", type=int)
@@ -34,7 +34,7 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.command == "health":
-        emit({"status": "ok", "product": "Tosun Flux", "version": "1.0.8"})
+        emit({"status": "ok", "product": "Tosun Flux", "version": "1.0.9"})
         return 0
 
     files = [Path(item) for item in args.files]

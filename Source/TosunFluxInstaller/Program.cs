@@ -10,7 +10,7 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.8";
+    internal const string ProductVersion = "1.0.9";
     internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
@@ -230,6 +230,7 @@ internal sealed class InstallerForm : Form
         ConfigureButton(_installButton, "설치", true);
         _installButton.Click += InstallButtonClicked;
         _content.Controls.Add(_installButton);
+        EnsureResponsiveLayout();
     }
 
     private void ShowUpdatePage(string installedRoot, Version installedVersion)
@@ -261,6 +262,7 @@ internal sealed class InstallerForm : Form
         _content.Controls.Add(_progress);
 
         _content.Controls.Add(CreateLabel("바로가기와 사용자 설정은 그대로 유지됩니다.", new Point(36, 304), new Size(668, 24), 9.5f, FontStyle.Regular, Muted));
+        EnsureResponsiveLayout();
     }
 
     private void ShowRepairPage(string installedRoot, Version installedVersion)
@@ -293,6 +295,7 @@ internal sealed class InstallerForm : Form
         ConfigureButton(cancelButton, "취소", false);
         cancelButton.Click += (_, _) => Close();
         _content.Controls.Add(cancelButton);
+        EnsureResponsiveLayout();
     }
     private void BrowseInstallFolder()
     {
@@ -416,6 +419,7 @@ internal sealed class InstallerForm : Form
         launchButton.Click += (_, _) => LaunchInstalledApplication();
         _content.Controls.Add(closeButton);
         _content.Controls.Add(launchButton);
+        EnsureResponsiveLayout();
     }
 
     private void ShowMaintenanceCompletePage()
@@ -441,6 +445,7 @@ internal sealed class InstallerForm : Form
         launchButton.Click += (_, _) => LaunchInstalledApplication();
         _content.Controls.Add(closeButton);
         _content.Controls.Add(launchButton);
+        EnsureResponsiveLayout();
     }
 
     private void CreateDesktopShortcut(Button button)

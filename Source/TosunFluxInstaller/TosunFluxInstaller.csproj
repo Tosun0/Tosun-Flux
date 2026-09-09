@@ -7,12 +7,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Tosun Flux Setup</AssemblyName>
-    <Company>Tosun</Company>
+    <Company>Tosun Studio</Company>
     <Authors>Tosun</Authors>
     <Product>Tosun Flux</Product>
     <Description>Tosun Flux 설치 프로그램</Description>
-    <Version>1.0.8</Version>
-    <InformationalVersion>1.0.8</InformationalVersion>
+    <Version>1.0.9</Version>
+    <InformationalVersion>1.0.9</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>..\..\Content\TosunFlux\Tosun.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishSingleFile>true</PublishSingleFile>

@@ -113,7 +113,12 @@ public partial class MainWindow : Window
 
     private void EnableAcrylic()
     {
-        var handle = new WindowInteropHelper(this).Handle;
+        EnableAcrylicBackdrop(this);
+    }
+
+    private static void EnableAcrylicBackdrop(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
         if (HwndSource.FromHwnd(handle) is HwndSource source)
             source.CompositionTarget.BackgroundColor = Colors.Transparent;
 
@@ -726,11 +731,12 @@ public partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             FontFamily = FontFamily,
             Background = System.Windows.Media.Brushes.Transparent,
-            AllowsTransparency = true,
+            AllowsTransparency = false,
             WindowStyle = WindowStyle.None,
             ResizeMode = ResizeMode.NoResize,
             ShowInTaskbar = false,
         };
+        helpWindow.SourceInitialized += (_, _) => EnableAcrylicBackdrop(helpWindow);
 
         helpWindow.Resources[typeof(System.Windows.Controls.Button)] = FindResource(typeof(System.Windows.Controls.Button));
         helpWindow.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = FindResource(typeof(System.Windows.Controls.Primitives.ScrollBar));
@@ -836,13 +842,13 @@ public partial class MainWindow : Window
         };
         helpWindow.Content = new Border
         {
-            Background = (System.Windows.Media.Brush)FindResource("GlassBrush"),
+            Background = (System.Windows.Media.Brush)FindResource("StrongGlassBrush"),
             CornerRadius = new CornerRadius(30),
             Padding = new Thickness(2),
             Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Colors.Black, BlurRadius = 34, ShadowDepth = 10, Opacity = 0.42 },
             Child = new Border
             {
-                Background = (System.Windows.Media.Brush)FindResource("RootOverlayBrush"),
+                Background = (System.Windows.Media.Brush)FindResource("GlassBrush"),
                 CornerRadius = new CornerRadius(28),
                 Child = layout,
             },

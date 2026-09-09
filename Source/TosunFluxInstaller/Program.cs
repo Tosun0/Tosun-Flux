@@ -10,7 +10,7 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.12";
+    internal const string ProductVersion = "1.0.13";
     internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
@@ -62,6 +62,8 @@ internal static class Program
 
 internal sealed class InstallerForm : Form
 {
+    private static readonly Size DesignClientSize = new(740, 700);
+    private static readonly Size DesignMinimumSize = new(680, 560);
     private readonly Panel _content = new();
     private readonly TextBox _installPath = new();
     private readonly CheckBox _desktopShortcut = new();
@@ -73,6 +75,7 @@ internal sealed class InstallerForm : Form
     private InstallResult _installResult;
     private bool _isMaintenanceOperation;
     private bool _isUpdateOperation;
+    private bool _layoutRefreshPending;
 
     private static readonly Color Ink = Color.FromArgb(28, 34, 50);
     private static readonly Color Muted = Color.FromArgb(92, 102, 122);
@@ -86,16 +89,16 @@ internal sealed class InstallerForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = $"{Program.ProductName} 설치";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(740, 700);
-        MinimumSize = new Size(680, 560);
+        ClientSize = DesignClientSize;
+        MinimumSize = DesignMinimumSize;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
         BackColor = Color.White;
         Font = new Font("Segoe UI", 9.5f);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
-        DpiChanged += (_, _) => BeginInvoke(EnsureResponsiveLayout);
-        Shown += (_, _) => EnsureResponsiveLayout();
+        DpiChanged += (_, _) => QueueResponsiveLayout();
+        Shown += (_, _) => QueueResponsiveLayout();
 
         BuildShell();
         if (InstallerOperations.TryGetInstalledRoot(out var installedRoot, out var installedVersion))
@@ -153,6 +156,19 @@ internal sealed class InstallerForm : Form
         Controls.Add(header);
     }
 
+    private void QueueResponsiveLayout()
+    {
+        if (_layoutRefreshPending || IsDisposed)
+            return;
+
+        _layoutRefreshPending = true;
+        BeginInvoke(() =>
+        {
+            _layoutRefreshPending = false;
+            EnsureResponsiveLayout();
+        });
+    }
+
     private void EnsureResponsiveLayout()
     {
         if (IsDisposed)
@@ -167,13 +183,20 @@ internal sealed class InstallerForm : Form
         }
         _content.AutoScrollMinSize = new Size(right + 24, bottom + 24);
 
+        var scale = DeviceDpi / 96f;
+        var desiredClientSize = new Size(
+            (int)Math.Round(DesignClientSize.Width * scale),
+            (int)Math.Round(DesignClientSize.Height * scale));
+        var minimumSize = new Size(
+            (int)Math.Round(DesignMinimumSize.Width * scale),
+            (int)Math.Round(DesignMinimumSize.Height * scale));
+        MinimumSize = minimumSize;
         var workingArea = Screen.FromControl(this).WorkingArea;
-        var maxWidth = Math.Max(MinimumSize.Width, workingArea.Width - 24);
-        var maxHeight = Math.Max(MinimumSize.Height, workingArea.Height - 24);
-        if (Width > maxWidth)
-            Width = maxWidth;
-        if (Height > maxHeight)
-            Height = maxHeight;
+        var maxWidth = Math.Max(minimumSize.Width, workingArea.Width - 24);
+        var maxHeight = Math.Max(minimumSize.Height, workingArea.Height - 24);
+        ClientSize = new Size(
+            Math.Min(desiredClientSize.Width, maxWidth),
+            Math.Min(desiredClientSize.Height, maxHeight));
         var x = Math.Clamp(Left, workingArea.Left, workingArea.Right - Width);
         var y = Math.Clamp(Top, workingArea.Top, workingArea.Bottom - Height);
         Location = new Point(x, y);

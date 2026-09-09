@@ -39,7 +39,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         OptimizationBox.ItemsSource = new[] { "원본 유지", "품질 우선", "균형", "용량 우선" };
-        ResolutionBox.ItemsSource = new[] { "원본", "4K UHD", "4K", "QHD", "FHD", "HD", "SD", "직접 지정" };
+        ResolutionBox.ItemsSource = new[] { "원본", "4K", "4K UHD", "QHD", "FHD", "HD", "SD", "직접 지정" };
         AspectBox.ItemsSource = new[] { "원본", "16:9", "9:16", "1:1", "4:3", "3:4" };
         FrameRateBox.ItemsSource = new[] { "원본", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60" };
         OptimizationBox.SelectedIndex = 0;
@@ -216,17 +216,28 @@ public partial class MainWindow : Window
 
     private void TargetBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
 
+    private void OptimizationBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateEstimatedSize();
+
+    private void FrameRateBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateEstimatedSize();
+
     private void ResolutionBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
 
     private void AspectBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
 
     private void CustomSizeBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_syncingCustomSizeFields || !IsInitialized || ResolutionBox.SelectedIndex == 7)
+        if (_syncingCustomSizeFields || !IsInitialized)
             return;
 
-        ResolutionBox.SelectedIndex = 7;
-        UpdateVisualSettings();
+        if (ResolutionBox.SelectedIndex != 7)
+        {
+            ResolutionBox.SelectedIndex = 7;
+            UpdateVisualSettings();
+            return;
+        }
+
+        // 직접 지정 상태에서는 입력 중인 현재 값을 기준으로 예상 용량을 갱신합니다.
+        UpdateEstimatedSize();
     }
 
     private void UpdateVisualSettings()
@@ -255,6 +266,7 @@ public partial class MainWindow : Window
             ? $"원본 프레임: {sourceFrameRate} fps"
             : "영상의 출력 프레임을 선택합니다.";
         UpdateCustomSizePreview();
+        UpdateEstimatedSize();
     }
 
     private void UpdateCustomSizePreview()
@@ -281,8 +293,8 @@ public partial class MainWindow : Window
         var sourceHeight = _sourceHeight ?? 1080;
         var resolution = ResolutionBox.SelectedIndex switch
         {
-            1 => (Width: 3840, Height: 2160),
-            2 => (Width: 4096, Height: 2160),
+            1 => (Width: 4096, Height: 2160),
+            2 => (Width: 3840, Height: 2160),
             3 => (Width: 2560, Height: 1440),
             4 => (Width: 1920, Height: 1080),
             5 => (Width: 1280, Height: 720),
@@ -314,6 +326,90 @@ public partial class MainWindow : Window
     }
 
     private static int Even(int value) => Math.Max(2, value / 2 * 2);
+
+    private (int Width, int Height)? GetActivePreviewDimensions()
+    {
+        if (ResolutionBox.SelectedIndex == 7 &&
+            int.TryParse(CustomWidthBox.Text, out var width) &&
+            int.TryParse(CustomHeightBox.Text, out var height) &&
+            width is >= 2 and <= 16384 && height is >= 2 and <= 16384)
+        {
+            return (width, height);
+        }
+
+        return GetPreviewDimensions();
+    }
+
+    private void UpdateEstimatedSize()
+    {
+        if (!IsInitialized || _files.Count == 0 || TargetBox.SelectedItem is not TargetChoice target)
+        {
+            EstimatedSizeText.Text = "예상 용량은 파일을 추가하면 표시됩니다.";
+            return;
+        }
+
+        try
+        {
+            var sourceBytes = _files.Sum(path => new FileInfo(path).Length);
+            var multiplier = target.Key switch
+            {
+                "png" => 0.95,
+                "jpg" => 0.55,
+                "webp" => 0.45,
+                "bmp" => 3.2,
+                "tiff" => 1.2,
+                "gif" => 0.7,
+                "pdf" => 0.8,
+                "png-sequence" => 2.8,
+                "jpg-sequence" => 0.7,
+                "mp4" => 0.75,
+                "webm" => 0.6,
+                "mov" => 0.95,
+                "mkv" => 0.85,
+                "avi" => 1.0,
+                "mp3" or "wav" or "flac" or "m4a" or "ogg" => 0.75,
+                _ => 1.0,
+            };
+
+            multiplier *= OptimizationBox.SelectedIndex switch
+            {
+                1 => 1.1,
+                2 => 0.8,
+                3 => 0.55,
+                _ => 1.0,
+            };
+
+            var isVideoTarget = target.Key is "mp4" or "webm" or "mov" or "mkv" or "avi" or "gif" or "png-sequence" or "jpg-sequence";
+            if (target.Key != "pdf" && _sourceWidth is > 0 && _sourceHeight is > 0 && GetActivePreviewDimensions() is { } preview)
+            {
+                var sourceArea = (double)_sourceWidth.Value * _sourceHeight.Value;
+                multiplier *= preview.Width * (double)preview.Height / sourceArea;
+            }
+
+            if (isVideoTarget && double.TryParse(_sourceFrameRate, out var sourceFrameRate) && sourceFrameRate > 0 && FrameRateBox.SelectedIndex > 0 && double.TryParse(FrameRateBox.SelectedItem?.ToString(), out var outputFrameRate))
+                multiplier *= outputFrameRate / sourceFrameRate;
+
+            var estimate = Math.Max(1024, sourceBytes * Math.Max(0.05, multiplier));
+            EstimatedSizeText.Text = $"예상 용량 · 약 {FormatBytes(estimate)}";
+        }
+        catch (IOException)
+        {
+            EstimatedSizeText.Text = "예상 용량을 계산하지 못했습니다.";
+        }
+    }
+
+    private static string FormatBytes(double bytes)
+    {
+        var units = new[] { "B", "KB", "MB", "GB", "TB" };
+        var unit = 0;
+        while (bytes >= 1024 && unit < units.Length - 1)
+        {
+            bytes /= 1024;
+            unit++;
+        }
+
+        return unit == 0 ? $"{bytes:0} {units[unit]}" : $"{bytes:0.0} {units[unit]}";
+    }
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -417,7 +513,7 @@ public partial class MainWindow : Window
         startInfo.ArgumentList.Add("--optimize");
         startInfo.ArgumentList.Add(new[] { "source", "quality", "balanced", "small" }[Math.Max(0, OptimizationBox.SelectedIndex)]);
         startInfo.ArgumentList.Add("--resolution");
-        startInfo.ArgumentList.Add(new[] { "source", "4k-uhd", "4k", "qhd", "fhd", "hd", "sd", "source" }[Math.Clamp(ResolutionBox.SelectedIndex, 0, 7)]);
+        startInfo.ArgumentList.Add(new[] { "source", "4k", "4k-uhd", "qhd", "fhd", "hd", "sd", "source" }[Math.Clamp(ResolutionBox.SelectedIndex, 0, 7)]);
         startInfo.ArgumentList.Add("--aspect");
         startInfo.ArgumentList.Add(ResolutionBox.SelectedIndex == 7 ? "source" : new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Clamp(AspectBox.SelectedIndex, 0, 5)]);
         startInfo.ArgumentList.Add("--fps");
@@ -528,8 +624,8 @@ public partial class MainWindow : Window
 
     private static string TargetLabel(string key) => key switch
     {
-        "png-sequence" => "PNG 프레임 시퀀스",
-        "jpg-sequence" => "JPG 프레임 시퀀스",
+        "png-sequence" => ".png Sequence",
+        "jpg-sequence" => ".jpg Sequence",
         _ => $".{key}",
     };
 

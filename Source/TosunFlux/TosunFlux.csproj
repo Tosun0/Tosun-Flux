@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Tosun Flux</AssemblyName>
+    <Company>Tosun</Company>
+    <Authors>Tosun</Authors>
+    <Product>Tosun Flux</Product>
+    <Description>토순의 파일 컨버터</Description>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\Content\TosunFlux\Tosun.ico</ApplicationIcon>
+    <Version>0.4.3</Version>
+    <InformationalVersion>0.4.3</InformationalVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="..\..\Content\TosunFlux\tosun-floating-v1.png" Link="Assets\tosun-floating-v1.png" />
+    <Resource Include="..\..\Content\TosunFlux\Tosun.ico" Link="Assets\Tosun.ico" />
+    <Resource Include="..\..\Content\TosunFlux\Pretendard.ttf" Link="Assets\Pretendard.ttf" />
+  </ItemGroup>
+</Project>

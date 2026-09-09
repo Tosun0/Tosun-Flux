@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Tosun Flux Setup</AssemblyName>
+    <Company>Tosun</Company>
+    <Authors>Tosun</Authors>
+    <Product>Tosun Flux</Product>
+    <Description>Tosun Flux 설치 프로그램</Description>
+    <Version>0.4.3</Version>
+    <InformationalVersion>0.4.3</InformationalVersion>
+    <ApplicationIcon>..\..\Content\TosunFlux\Tosun.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="payload.zip" />
+  </ItemGroup>
+</Project>

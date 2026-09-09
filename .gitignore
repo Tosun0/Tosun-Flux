@@ -1,0 +1,22 @@
+# Generated build and distribution output
+
+/Build/Intermediate/
+/Source/TosunFlux/bin/
+/Source/TosunFlux/obj/
+/Source/TosunFluxInstaller/bin/
+/Source/TosunFluxInstaller/obj/
+
+# Python runtime cache
+__pycache__/
+*.py[cod]
+
+# Local IDE and OS files
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+Desktop.ini
+
+# Local packaging outputs; release binaries are published through GitHub Releases
+/packaged/

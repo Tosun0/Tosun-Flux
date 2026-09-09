@@ -1,0 +1,2 @@
+# Keep the packaged Windows distribution in Git LFS.
+packaged/** filter=lfs diff=lfs merge=lfs -text

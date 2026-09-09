@@ -721,88 +721,164 @@ public partial class MainWindow : Window
         {
             Owner = this,
             Title = "Tosun Flux 도움말",
-            Width = 590,
-            Height = 560,
-            MinWidth = 460,
-            MinHeight = 420,
+            Width = 650,
+            Height = 610,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             FontFamily = FontFamily,
-            Background = (System.Windows.Media.Brush)FindResource("RootOverlayBrush"),
-            ResizeMode = ResizeMode.CanResizeWithGrip,
+            Background = System.Windows.Media.Brushes.Transparent,
+            AllowsTransparency = true,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
         };
+
+        helpWindow.Resources[typeof(System.Windows.Controls.Button)] = FindResource(typeof(System.Windows.Controls.Button));
+        helpWindow.Resources[typeof(ScrollBar)] = FindResource(typeof(ScrollBar));
 
         var layout = new Grid { Margin = new Thickness(24) };
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(12) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(16) });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(14) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(16) });
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.Children.Add(new TextBlock
+
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var heading = new StackPanel();
+        heading.Children.Add(new TextBlock
         {
-            Text = "변환 가능한 파일",
-            FontSize = 20,
-            FontWeight = FontWeights.SemiBold,
+            Text = "변환 도움말",
+            FontSize = 22,
+            FontWeight = FontWeights.Black,
             Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
         });
-
-        var guide = new TextBlock
+        heading.Children.Add(new TextBlock
         {
-            Text = HelpText,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-            LineHeight = 22,
-            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+            Text = "지원 형식과 출력 동작을 한눈에 확인하세요.",
+            Margin = new Thickness(1, 6, 0, 0),
+            FontSize = 12,
+            FontWeight = FontWeights.Light,
+            Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush"),
+        });
+        header.Children.Add(heading);
+        var closeButton = new System.Windows.Controls.Button
+        {
+            Content = "×",
+            Width = 38,
+            Height = 38,
+            Padding = new Thickness(0),
+            FontSize = 20,
+            FontWeight = FontWeights.Light,
+            Background = (System.Windows.Media.Brush)FindResource("SecondaryBrush"),
+            Foreground = (System.Windows.Media.Brush)FindResource("SecondaryTextBrush"),
+            ToolTip = "닫기",
         };
+        closeButton.Click += (_, _) => helpWindow.Close();
+        Grid.SetColumn(closeButton, 1);
+        header.Children.Add(closeButton);
+        header.MouseLeftButtonDown += (_, _) => helpWindow.DragMove();
+        layout.Children.Add(header);
+
+        var guideStack = new StackPanel();
+        AddHelpSection(guideStack, "이미지", "PNG · JPG/JPEG · WEBP · BMP · TIFF · GIF → PNG, JPG, WEBP, BMP, TIFF, GIF, PDF");
+        AddHelpSection(guideStack, "PDF", "PDF → PNG, JPG, PDF\nPDF 최적화는 텍스트를 유지하면서 내부 이미지와 구조를 줄입니다.");
+        AddHelpSection(guideStack, "영상", "MP4 · WEBM · MOV · MKV · AVI · GIF → MP4, WEBM, MOV, MKV, AVI, GIF\n영상 → .png Sequence 또는 .jpg Sequence로 프레임을 추출할 수 있습니다.");
+        AddHelpSection(guideStack, "문서 · 데이터 · 음성", "DOCX → TXT/MD · TXT/MD → DOCX · CSV/TSV/JSON 상호 변환\nMP3 · WAV · FLAC · M4A · OGG 형식 간 변환");
+        AddHelpSection(guideStack, "출력 설정", "해상도·화면비·맞춤 방식·프레임 변환은 가능한 파일에서만 표시됩니다. 원본 설정과 같은 형식은 원본을 그대로 저장하며, 예상 용량은 완료 후 실제 결과 용량으로 바뀝니다.");
+
         var guideSurface = new Border
         {
             Background = (System.Windows.Media.Brush)FindResource("StrongGlassBrush"),
-            CornerRadius = new CornerRadius(18),
-            Padding = new Thickness(18),
+            CornerRadius = new CornerRadius(22),
+            Padding = new Thickness(14),
+            ClipToBounds = true,
             Child = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = guide,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = guideStack,
             },
         };
         Grid.SetRow(guideSurface, 2);
         layout.Children.Add(guideSurface);
 
-        var closeButton = new System.Windows.Controls.Button
+        var footer = new Grid();
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footer.Children.Add(new TextBlock
+        {
+            Text = "원본 유지 · 고품질 변환 · 실제 결과 용량 지원",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 11,
+            FontWeight = FontWeights.Light,
+            Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush"),
+        });
+        var footerCloseButton = new System.Windows.Controls.Button
         {
             Content = "닫기",
-            Height = 44,
+            Width = 104,
+            Height = 42,
+            Margin = new Thickness(14, 0, 0, 0),
             Background = (System.Windows.Media.Brush)FindResource("AccentBrush"),
             Foreground = System.Windows.Media.Brushes.White,
-            BorderThickness = new Thickness(0),
         };
-        closeButton.Click += (_, _) => helpWindow.Close();
-        Grid.SetRow(closeButton, 4);
-        layout.Children.Add(closeButton);
-        helpWindow.Content = layout;
+        footerCloseButton.Click += (_, _) => helpWindow.Close();
+        Grid.SetColumn(footerCloseButton, 1);
+        footer.Children.Add(footerCloseButton);
+        Grid.SetRow(footer, 4);
+        layout.Children.Add(footer);
+
+        helpWindow.KeyDown += (_, args) =>
+        {
+            if (args.Key == Key.Escape)
+                helpWindow.Close();
+        };
+        helpWindow.Content = new Border
+        {
+            Background = (System.Windows.Media.Brush)FindResource("GlassBrush"),
+            CornerRadius = new CornerRadius(30),
+            Padding = new Thickness(2),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Colors.Black, BlurRadius = 34, ShadowDepth = 10, Opacity = 0.42 },
+            Child = new Border
+            {
+                Background = (System.Windows.Media.Brush)FindResource("RootOverlayBrush"),
+                CornerRadius = new CornerRadius(28),
+                Child = layout,
+            },
+        };
         helpWindow.ShowDialog();
     }
 
-    private const string HelpText = """
-이미지
-PNG · JPG/JPEG · WEBP · BMP · TIFF · GIF → PNG, JPG, WEBP, BMP, TIFF, GIF, PDF
-
-PDF
-PDF → PNG, JPG, PDF
-PDF 최적화는 텍스트를 유지하면서 내부 이미지와 구조를 줄입니다.
-
-영상
-MP4 · WEBM · MOV · MKV · AVI · GIF → MP4, WEBM, MOV, MKV, AVI, GIF
-영상 → .png Sequence 또는 .jpg Sequence로 프레임을 추출할 수 있습니다.
-
-문서·데이터·음성
-DOCX → TXT/MD · TXT/MD → DOCX · CSV/TSV/JSON 상호 변환
-MP3 · WAV · FLAC · M4A · OGG 형식 간 변환
-
-해상도, 화면비, 맞춤 방식, 프레임 변환은 해당 파일 종류에서만 표시됩니다.
-원본 설정과 같은 확장자를 선택하면 원본 파일을 그대로 저장합니다.
-다른 이미지 형식으로 바꿀 때 원본 유지 최적화는 고품질 설정을 사용합니다.
-예상 용량은 파일별 해상도·프레임과 압축 편차를 반영한 범위이며, 완료 후 실제 결과 용량으로 바뀝니다.
-""";
+    private void AddHelpSection(StackPanel host, string title, string description)
+    {
+        var section = new StackPanel();
+        section.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            FontWeight = FontWeights.Bold,
+            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+        });
+        section.Children.Add(new TextBlock
+        {
+            Text = description,
+            Margin = new Thickness(0, 6, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            LineHeight = 19,
+            FontWeight = FontWeights.Light,
+            Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush"),
+        });
+        host.Children.Add(new Border
+        {
+            Background = (System.Windows.Media.Brush)FindResource("FieldBrush"),
+            CornerRadius = new CornerRadius(17),
+            Padding = new Thickness(15),
+            Margin = new Thickness(0, 0, 0, 9),
+            Child = section,
+        });
+    }
 
     private sealed record SourceMetadata(int? Width, int? Height, double? FrameRate, double? Duration);
 

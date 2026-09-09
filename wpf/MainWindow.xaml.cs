@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -17,7 +18,9 @@ public partial class MainWindow : Window
     private const string SettingsKeyPath = @"Software\Tosun\Tosun Flux";
     private const string OutputPathValueName = "OutputPath";
     private readonly List<string> _files = [];
+    private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private UpdateInfo? _availableUpdate;
+    private bool _allowClose;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",
@@ -34,13 +37,67 @@ public partial class MainWindow : Window
         ResolutionBox.SelectedIndex = 0;
         AspectBox.SelectedIndex = 0;
         OutputPath.Text = LoadOutputPath();
-        Closed += (_, _) => SaveOutputPath();
+        _trayIcon = CreateTrayIcon();
+        Closing += MainWindow_Closing;
+        StateChanged += MainWindow_StateChanged;
+        Closed += MainWindow_Closed;
         Loaded += MainWindow_Loaded;
         SourceInitialized += (_, _) => EnableAcrylic();
         UpdateVisualSettings();
     }
 
     private string BackendPath => Path.Combine(AppContext.BaseDirectory, "backend", "TosunConverter.Backend", "TosunConverter.Backend.exe");
+
+    private System.Windows.Forms.NotifyIcon CreateTrayIcon()
+    {
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("열기", null, (_, _) => ShowFromTray());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("종료", null, (_, _) => ExitApplication());
+
+        return new System.Windows.Forms.NotifyIcon
+        {
+            Text = "Tosun Flux",
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? System.Drawing.SystemIcons.Application,
+            ContextMenuStrip = menu,
+            Visible = true
+        };
+    }
+
+    private void MainWindow_Closing(object? sender, CancelEventArgs e)
+    {
+        if (_allowClose)
+            return;
+
+        e.Cancel = true;
+        Hide();
+    }
+
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+            Hide();
+    }
+
+    private void MainWindow_Closed(object? sender, EventArgs e)
+    {
+        SaveOutputPath();
+        _trayIcon.Visible = false;
+        _trayIcon.Dispose();
+    }
+
+    private void ShowFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private void ExitApplication()
+    {
+        _allowClose = true;
+        Close();
+    }
 
     private void EnableAcrylic()
     {
@@ -65,15 +122,15 @@ public partial class MainWindow : Window
             DwmSetWindowAttribute(handle, 19, ref darkMode, sizeof(int));
     }
 
-    private void Window_DragOver(object sender, DragEventArgs e)
+    private void Window_DragOver(object sender, System.Windows.DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
         e.Handled = true;
     }
 
-    private async void Window_Drop(object sender, DragEventArgs e)
+    private async void Window_Drop(object sender, System.Windows.DragEventArgs e)
     {
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths)
             await AddPathsAsync(paths);
     }
 
@@ -83,7 +140,7 @@ public partial class MainWindow : Window
 
     private async Task PickFilesAsync()
     {
-        var dialog = new OpenFileDialog { Multiselect = true, Title = "변환할 파일 선택", Filter = "모든 파일|*.*" };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "변환할 파일 선택", Filter = "모든 파일|*.*" };
         if (dialog.ShowDialog(this) == true)
             await AddPathsAsync(dialog.FileNames);
     }
@@ -115,7 +172,7 @@ public partial class MainWindow : Window
 
     private async void RemoveFile_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button)
+        if (sender is not System.Windows.Controls.Button button)
             return;
 
         if (ItemsControl.ContainerFromElement(FilesList, button) is not ListBoxItem item)
@@ -355,7 +412,7 @@ public partial class MainWindow : Window
             return true;
         }
 
-        MessageBox.Show(this, "직접 해상도는 가로·세로 모두 2~16384 픽셀로 입력해 주세요.", "Tosun Flux", MessageBoxButton.OK, MessageBoxImage.Warning);
+        System.Windows.MessageBox.Show(this, "직접 해상도는 가로·세로 모두 2~16384 픽셀로 입력해 주세요.", "Tosun Flux", MessageBoxButton.OK, MessageBoxImage.Warning);
         return false;
     }
 
@@ -411,7 +468,7 @@ public partial class MainWindow : Window
     {
         if (_availableUpdate is null)
             return;
-        if (MessageBox.Show(this, $"Tosun Flux v{_availableUpdate.Version}을 다운로드하고 설치할까요?", "업데이트", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes)
+        if (System.Windows.MessageBox.Show(this, $"Tosun Flux v{_availableUpdate.Version}을 다운로드하고 설치할까요?", "업데이트", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes)
             return;
 
         UpdateButton.IsEnabled = false;
@@ -432,13 +489,13 @@ public partial class MainWindow : Window
                 Arguments = $"--wait-for-pid {Environment.ProcessId}"
             };
             Process.Start(installer);
-            Application.Current.Shutdown();
+            ExitApplication();
         }
         catch (Exception error)
         {
             UpdateButton.IsEnabled = true;
             StatusText.Text = "업데이트를 설치하지 못했습니다.";
-            MessageBox.Show(this, error.Message, "업데이트", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(this, error.Message, "업데이트", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 

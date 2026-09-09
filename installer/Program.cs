@@ -10,7 +10,7 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "0.4.0";
+    internal const string ProductVersion = "0.4.1";
     internal const string Publisher = "Tosun";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
@@ -151,7 +151,7 @@ internal sealed class InstallerForm : Form
 
         _content.Controls.Add(CreateLabel("바로가기", new Point(36, 185), new Size(200, 23), 10, FontStyle.Bold, Ink));
         ConfigureCheckBox(_desktopShortcut, "바탕화면에 Tosun Flux 바로가기 만들기", new Point(39, 216));
-        ConfigureCheckBox(_startMenuShortcut, "시작 메뉴에 Tosun Flux와 제거 바로가기 만들기", new Point(39, 251));
+        ConfigureCheckBox(_startMenuShortcut, "시작 메뉴에 Tosun Flux 바로가기 만들기", new Point(39, 251));
         _desktopShortcut.Checked = true;
         _startMenuShortcut.Checked = true;
         _content.Controls.Add(_desktopShortcut);
@@ -408,6 +408,7 @@ internal static class InstallerOperations
 
             progress.Report(new InstallProgress(93, "Windows에 앱을 등록하는 중..."));
             RegisterWindowsApp(options.InstallRoot, appPath, uninstaller);
+            DeleteFile(Path.Combine(GetStartMenuFolder(), "Tosun Flux 제거.lnk"));
 
             var desktopCreated = false;
             var startMenuCreated = false;
@@ -450,7 +451,6 @@ internal static class InstallerOperations
         var startMenu = GetStartMenuFolder();
         Directory.CreateDirectory(startMenu);
         CreateApplicationShortcut(Path.Combine(startMenu, "Tosun Flux.lnk"), installRoot);
-        CreateShortcut(Path.Combine(startMenu, "Tosun Flux 제거.lnk"), Path.Combine(installRoot, "Uninstall Tosun Flux.exe"), "Tosun Flux 제거", "--uninstall");
     }
 
     public static void LaunchApplication(string installRoot)
@@ -460,7 +460,13 @@ internal static class InstallerOperations
         if (!File.Exists(appPath) || !File.Exists(backendPath))
             throw new InvalidOperationException("설치된 앱과 변환 백엔드를 찾을 수 없습니다.");
         VerifyBackend(backendPath);
-        Process.Start(new ProcessStartInfo(appPath) { WorkingDirectory = installRoot, UseShellExecute = true });
+        // 관리자 권한 설치 프로그램의 자식 프로세스로 직접 실행하면
+        // 탐색기에서 일반 사용자 권한으로 드래그앤드랍이 차단됩니다.
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{appPath}\"")
+        {
+            WorkingDirectory = installRoot,
+            UseShellExecute = true
+        });
     }
 
     public static void Uninstall()

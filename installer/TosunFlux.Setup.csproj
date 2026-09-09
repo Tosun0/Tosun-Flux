@@ -11,8 +11,8 @@
     <Authors>Tosun</Authors>
     <Product>Tosun Flux</Product>
     <Description>Tosun Flux 설치 프로그램</Description>
-    <Version>0.4.0</Version>
-    <InformationalVersion>0.4.0</InformationalVersion>
+    <Version>0.4.1</Version>
+    <InformationalVersion>0.4.1</InformationalVersion>
     <ApplicationIcon>..\assets\Tosun.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishSingleFile>true</PublishSingleFile>

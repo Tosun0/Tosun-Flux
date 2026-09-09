@@ -11,6 +11,7 @@ internal static class UpdateService
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/Tosun0/Tosun-Flux/releases/latest";
     private const string InstallerAssetName = "Tosun Flux Setup.exe";
+    private const string NormalizedInstallerAssetName = "Tosun.Flux.Setup.exe";
     private static readonly HttpClient Client = CreateClient();
 
     public static async Task<UpdateInfo?> CheckAsync(Version currentVersion)
@@ -28,7 +29,9 @@ internal static class UpdateService
 
         foreach (var asset in root.GetProperty("assets").EnumerateArray())
         {
-            if (!string.Equals(asset.GetProperty("name").GetString(), InstallerAssetName, StringComparison.OrdinalIgnoreCase))
+            var assetName = asset.GetProperty("name").GetString();
+            if (!string.Equals(assetName, InstallerAssetName, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(assetName, NormalizedInstallerAssetName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             var downloadUrl = asset.GetProperty("browser_download_url").GetString();
@@ -82,7 +85,7 @@ internal static class UpdateService
     private static HttpClient CreateClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Tosun-Flux/0.4.0");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Tosun-Flux/0.4.1");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
     }

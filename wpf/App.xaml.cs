@@ -5,7 +5,7 @@ using Microsoft.Win32;
 
 namespace TosunConverter.Wpf;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {

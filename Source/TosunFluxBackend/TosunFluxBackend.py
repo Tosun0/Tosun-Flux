@@ -34,7 +34,7 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.command == "health":
-        emit({"status": "ok", "product": "Tosun Flux", "version": "1.0.7"})
+        emit({"status": "ok", "product": "Tosun Flux", "version": "1.0.8"})
         return 0
 
     files = [Path(item) for item in args.files]

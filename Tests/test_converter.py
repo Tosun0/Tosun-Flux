@@ -44,6 +44,14 @@ class ConverterTests(unittest.TestCase):
             with Image.open(result.outputs[0]) as converted:
                 self.assertEqual(converted.size, (1280, 1280))
 
+    def test_identity_conversion_copies_original_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "photo.png"
+            Image.new("RGB", (320, 240), "#7286ee").save(source)
+            result = convert_file(source, root / "out", "png", ConversionOptions())
+            self.assertEqual(result.outputs[0].read_bytes(), source.read_bytes())
+
     def test_pdf_can_be_optimized_without_rasterizing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

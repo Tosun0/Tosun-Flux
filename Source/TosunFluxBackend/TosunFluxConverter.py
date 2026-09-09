@@ -182,6 +182,18 @@ def unique_sequence_pattern(directory: Path, stem: str, extension: str) -> tuple
         index += 1
 
 
+def _is_identity_conversion(source: Path, target: str, options: ConversionOptions) -> bool:
+    return (
+        source.suffix.lower() == f".{target.lower()}"
+        and options.optimize == "source"
+        and options.resolution == "source"
+        and options.aspect == "source"
+        and options.width is None
+        and options.height is None
+        and options.fps == "source"
+    )
+
+
 def _read_text(path: Path) -> str:
     for encoding in ("utf-8-sig", "cp949", "utf-8"):
         try:
@@ -468,6 +480,10 @@ def convert_file(source: Path, output_dir: Path, target: str, options: Conversio
     if target not in supported_targets(source):
         raise ConversionError(f"지원하지 않는 변환입니다: {source.suffix} → .{target}")
     output_dir.mkdir(parents=True, exist_ok=True)
+    if _is_identity_conversion(source, target, options):
+        destination = unique_output(output_dir, source.stem, target)
+        shutil.copy2(source, destination)
+        return ConversionResult(source, (destination,))
     kind = file_kind(source)
     if kind == "image":
         return _convert_image(source, output_dir, target, options)

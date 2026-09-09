@@ -405,13 +405,13 @@ public partial class MainWindow : Window
             if (isVideoTarget && double.TryParse(_sourceFrameRate, out var sourceFrameRate) && sourceFrameRate > 0 && FrameRateBox.SelectedIndex > 0 && double.TryParse(FrameRateBox.SelectedItem?.ToString(), out var outputFrameRate))
                 multiplier *= outputFrameRate / sourceFrameRate;
 
-            var isUnchangedMp4 = target.Key == "mp4" &&
+            var isUnchangedConversion = target.Key is not ("png-sequence" or "jpg-sequence") &&
                 OptimizationBox.SelectedIndex == 0 &&
                 ResolutionBox.SelectedIndex == 0 &&
                 AspectBox.SelectedIndex == 0 &&
                 FrameRateBox.SelectedIndex == 0 &&
-                _files.All(path => Path.GetExtension(path).Equals(".mp4", StringComparison.OrdinalIgnoreCase));
-            var estimate = isUnchangedMp4 ? sourceBytes : Math.Max(1024, sourceBytes * Math.Max(0.05, multiplier));
+                _files.All(path => Path.GetExtension(path).Equals($".{target.Key}", StringComparison.OrdinalIgnoreCase));
+            var estimate = isUnchangedConversion ? sourceBytes : Math.Max(1024, sourceBytes * Math.Max(0.05, multiplier));
             EstimatedSizeText.Text = $"예상 용량 · 약 {FormatBytes(estimate)}";
         }
         catch (IOException)
@@ -651,6 +651,93 @@ public partial class MainWindow : Window
         "jpg-sequence" => ".jpg Sequence",
         _ => $".{key}",
     };
+
+    private void HelpButton_Click(object sender, RoutedEventArgs e)
+    {
+        var helpWindow = new Window
+        {
+            Owner = this,
+            Title = "Tosun Flux 도움말",
+            Width = 590,
+            Height = 560,
+            MinWidth = 460,
+            MinHeight = 420,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            FontFamily = FontFamily,
+            Background = (System.Windows.Media.Brush)FindResource("RootOverlayBrush"),
+            ResizeMode = ResizeMode.CanResizeWithGrip,
+        };
+
+        var layout = new Grid { Margin = new Thickness(24) };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(12) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(14) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.Children.Add(new TextBlock
+        {
+            Text = "변환 가능한 파일",
+            FontSize = 20,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+        });
+
+        var guide = new TextBlock
+        {
+            Text = HelpText,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 13,
+            LineHeight = 22,
+            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+        };
+        var guideSurface = new Border
+        {
+            Background = (System.Windows.Media.Brush)FindResource("StrongGlassBrush"),
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(18),
+            Child = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = guide,
+            },
+        };
+        Grid.SetRow(guideSurface, 2);
+        layout.Children.Add(guideSurface);
+
+        var closeButton = new System.Windows.Controls.Button
+        {
+            Content = "닫기",
+            Height = 44,
+            Background = (System.Windows.Media.Brush)FindResource("AccentBrush"),
+            Foreground = System.Windows.Media.Brushes.White,
+            BorderThickness = new Thickness(0),
+        };
+        closeButton.Click += (_, _) => helpWindow.Close();
+        Grid.SetRow(closeButton, 4);
+        layout.Children.Add(closeButton);
+        helpWindow.Content = layout;
+        helpWindow.ShowDialog();
+    }
+
+    private const string HelpText = """
+이미지
+PNG · JPG/JPEG · WEBP · BMP · TIFF · GIF → PNG, JPG, WEBP, BMP, TIFF, GIF, PDF
+
+PDF
+PDF → PNG, JPG, PDF
+PDF 최적화는 텍스트를 유지하면서 내부 이미지와 구조를 줄입니다.
+
+영상
+MP4 · WEBM · MOV · MKV · AVI · GIF → MP4, WEBM, MOV, MKV, AVI, GIF
+영상 → .png Sequence 또는 .jpg Sequence로 프레임을 추출할 수 있습니다.
+
+문서·데이터·음성
+DOCX → TXT/MD · TXT/MD → DOCX · CSV/TSV/JSON 상호 변환
+MP3 · WAV · FLAC · M4A · OGG 형식 간 변환
+
+해상도, 화면비, 맞춤 방식, 프레임 변환은 해당 파일 종류에서만 표시됩니다.
+원본 설정과 같은 확장자를 선택하면 원본 파일을 그대로 저장합니다.
+""";
 
     private sealed record TargetChoice(string Label, string Key)
     {

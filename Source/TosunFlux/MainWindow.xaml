@@ -217,9 +217,10 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="CheckUpdateButton" Content="업데이트 확인" Padding="14,9" Background="{StaticResource SecondaryBrush}" Foreground="{StaticResource SecondaryTextBrush}" Click="CheckUpdateButton_Click" />
                     <Button x:Name="UpdateButton" Visibility="Collapsed" Content="업데이트" Padding="14,9" Margin="8,0,12,0" Click="UpdateButton_Click" />
+                    <Button x:Name="HelpButton" Content="?" Width="34" Height="34" Padding="0" FontSize="17" FontWeight="Black" Background="{StaticResource SecondaryBrush}" Foreground="{StaticResource SecondaryTextBrush}" ToolTip="변환 형식 도움말" Click="HelpButton_Click" />
                 </StackPanel>
                 <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.7." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
+                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.8." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
             </Grid>
 
             <Grid Grid.Row="2">

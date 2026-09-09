@@ -10,7 +10,7 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.7";
+    internal const string ProductVersion = "1.0.8";
     internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
@@ -87,12 +87,15 @@ internal sealed class InstallerForm : Form
         Text = $"{Program.ProductName} 설치";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(740, 700);
+        MinimumSize = new Size(680, 560);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
         BackColor = Color.White;
         Font = new Font("Segoe UI", 9.5f);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
+        DpiChanged += (_, _) => BeginInvoke(EnsureResponsiveLayout);
+        Shown += (_, _) => EnsureResponsiveLayout();
 
         BuildShell();
         if (InstallerOperations.TryGetInstalledRoot(out var installedRoot, out var installedVersion))
@@ -144,8 +147,36 @@ internal sealed class InstallerForm : Form
         _content.Size = new Size(ClientSize.Width, ClientSize.Height - 126);
         _content.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         _content.BackColor = Color.White;
+        _content.AutoScroll = true;
+        _content.AutoScrollMinSize = new Size(740, 560);
         Controls.Add(_content);
         Controls.Add(header);
+    }
+
+    private void EnsureResponsiveLayout()
+    {
+        if (IsDisposed)
+            return;
+
+        var right = 0;
+        var bottom = 0;
+        foreach (Control control in _content.Controls)
+        {
+            right = Math.Max(right, control.Right);
+            bottom = Math.Max(bottom, control.Bottom);
+        }
+        _content.AutoScrollMinSize = new Size(right + 24, bottom + 24);
+
+        var workingArea = Screen.FromControl(this).WorkingArea;
+        var maxWidth = Math.Max(MinimumSize.Width, workingArea.Width - 24);
+        var maxHeight = Math.Max(MinimumSize.Height, workingArea.Height - 24);
+        if (Width > maxWidth)
+            Width = maxWidth;
+        if (Height > maxHeight)
+            Height = maxHeight;
+        var x = Math.Clamp(Left, workingArea.Left, workingArea.Right - Width);
+        var y = Math.Clamp(Top, workingArea.Top, workingArea.Bottom - Height);
+        Location = new Point(x, y);
     }
 
     private void ShowInstallPage()

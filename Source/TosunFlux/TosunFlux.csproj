@@ -14,8 +14,8 @@
     <Description>토순의 파일 컨버터</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\Content\TosunFlux\Tosun.ico</ApplicationIcon>
-    <Version>1.0.10</Version>
-    <InformationalVersion>1.0.10</InformationalVersion>
+    <Version>1.0.11</Version>
+    <InformationalVersion>1.0.11</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>

@@ -220,7 +220,7 @@
                     <Button x:Name="HelpButton" Content="?" Width="34" Height="34" Padding="0" FontSize="17" FontWeight="Black" Background="{StaticResource SecondaryBrush}" Foreground="{StaticResource SecondaryTextBrush}" ToolTip="변환 형식 도움말" Click="HelpButton_Click" />
                 </StackPanel>
                 <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.10." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
+                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.11." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
             </Grid>
 
             <Grid x:Name="WorkspaceGrid" Grid.Row="2">

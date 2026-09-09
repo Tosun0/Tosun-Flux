@@ -79,13 +79,37 @@ internal static class UpdateService
         }
 
         progress.Report(100);
+        CleanupPreviousInstallers(updateDirectory, destination);
         return destination;
+    }
+
+    private static void CleanupPreviousInstallers(string updateDirectory, string currentInstaller)
+    {
+        var currentPath = Path.GetFullPath(currentInstaller);
+        foreach (var path in Directory.EnumerateFiles(updateDirectory, "Tosun Flux Setup *.exe"))
+        {
+            if (string.Equals(Path.GetFullPath(path), currentPath, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+                // 사용 중인 이전 인스톨러는 다음 업데이트 때 다시 정리합니다.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 접근할 수 없는 이전 인스톨러는 삭제하지 않고 보존합니다.
+            }
+        }
     }
 
     private static HttpClient CreateClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Tosun-Flux/1.0.10");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Tosun-Flux/1.0.11");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
     }

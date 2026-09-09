@@ -10,7 +10,7 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.13";
+    internal const string ProductVersion = "1.0.14";
     internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
@@ -63,7 +63,7 @@ internal static class Program
 internal sealed class InstallerForm : Form
 {
     private static readonly Size DesignClientSize = new(740, 700);
-    private static readonly Size DesignMinimumSize = new(680, 560);
+    private const int HeaderHeight = 152;
     private readonly Panel _content = new();
     private readonly TextBox _installPath = new();
     private readonly CheckBox _desktopShortcut = new();
@@ -75,7 +75,6 @@ internal sealed class InstallerForm : Form
     private InstallResult _installResult;
     private bool _isMaintenanceOperation;
     private bool _isUpdateOperation;
-    private bool _layoutRefreshPending;
 
     private static readonly Color Ink = Color.FromArgb(28, 34, 50);
     private static readonly Color Muted = Color.FromArgb(92, 102, 122);
@@ -90,15 +89,12 @@ internal sealed class InstallerForm : Form
         Text = $"{Program.ProductName} 설치";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = DesignClientSize;
-        MinimumSize = DesignMinimumSize;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
         BackColor = Color.White;
         Font = new Font("Segoe UI", 9.5f);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
-        DpiChanged += (_, _) => QueueResponsiveLayout();
-        Shown += (_, _) => QueueResponsiveLayout();
 
         BuildShell();
         if (InstallerOperations.TryGetInstalledRoot(out var installedRoot, out var installedVersion))
@@ -117,6 +113,9 @@ internal sealed class InstallerForm : Form
         {
             ShowInstallPage();
         }
+
+        MinimumSize = Size;
+        MaximumSize = Size;
     }
 
     private void BuildShell()
@@ -124,14 +123,14 @@ internal sealed class InstallerForm : Form
         var header = new Panel
         {
             Location = Point.Empty,
-            Size = new Size(ClientSize.Width, 126),
+            Size = new Size(ClientSize.Width, HeaderHeight),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BackColor = Color.FromArgb(239, 242, 255)
         };
-        header.Controls.Add(CreateLabel("TOSUN FLUX", new Point(36, 24), new Size(520, 40), 22, FontStyle.Bold, Ink));
-        header.Controls.Add(CreateLabel("토순의 파일 컨버터 설치·유지 관리 프로그램", new Point(38, 67), new Size(520, 25), 10.5f, FontStyle.Regular, Muted));
-        header.Controls.Add(CreateLabel($"게시자 {Program.Publisher}  ·  v{Program.ProductVersion}", new Point(38, 95), new Size(520, 20), 9, FontStyle.Regular, Muted));
-        header.Controls.Add(CreateLabel("© 2026 Tosun Studio. All rights reserved.", new Point(38, 111), new Size(580, 15), 8.5f, FontStyle.Regular, Muted));
+        header.Controls.Add(CreateLabel("TOSUN FLUX", new Point(36, 18), new Size(520, 48), 22, FontStyle.Bold, Ink));
+        header.Controls.Add(CreateLabel("토순의 파일 컨버터 설치·유지 관리 프로그램", new Point(38, 64), new Size(560, 30), 10.5f, FontStyle.Regular, Muted));
+        header.Controls.Add(CreateLabel($"게시자 {Program.Publisher}  ·  v{Program.ProductVersion}", new Point(38, 94), new Size(560, 26), 9, FontStyle.Regular, Muted));
+        header.Controls.Add(CreateLabel("© 2026 Tosun Studio. All rights reserved.", new Point(38, 120), new Size(600, 24), 8.5f, FontStyle.Regular, Muted));
 
         using var appIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
         if (appIcon is not null)
@@ -139,67 +138,28 @@ internal sealed class InstallerForm : Form
             header.Controls.Add(new PictureBox
             {
                 Image = appIcon.ToBitmap(),
-                Location = new Point(642, 27),
+                Location = new Point(642, 34),
                 Size = new Size(70, 70),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             });
         }
 
-        _content.Location = new Point(0, 126);
-        _content.Size = new Size(ClientSize.Width, ClientSize.Height - 126);
+        _content.Location = new Point(0, HeaderHeight);
+        _content.Size = new Size(ClientSize.Width, ClientSize.Height - HeaderHeight);
         _content.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         _content.BackColor = Color.White;
         _content.AutoScroll = true;
-        _content.AutoScrollMinSize = new Size(740, 560);
+        _content.AutoScrollMinSize = Size.Empty;
         Controls.Add(_content);
         Controls.Add(header);
     }
 
-    private void QueueResponsiveLayout()
+    private void ResetScrollLayout()
     {
-        if (_layoutRefreshPending || IsDisposed)
-            return;
-
-        _layoutRefreshPending = true;
-        BeginInvoke(() =>
-        {
-            _layoutRefreshPending = false;
-            EnsureResponsiveLayout();
-        });
-    }
-
-    private void EnsureResponsiveLayout()
-    {
-        if (IsDisposed)
-            return;
-
-        var right = 0;
-        var bottom = 0;
-        foreach (Control control in _content.Controls)
-        {
-            right = Math.Max(right, control.Right);
-            bottom = Math.Max(bottom, control.Bottom);
-        }
-        _content.AutoScrollMinSize = new Size(right + 24, bottom + 24);
-
-        var scale = DeviceDpi / 96f;
-        var desiredClientSize = new Size(
-            (int)Math.Round(DesignClientSize.Width * scale),
-            (int)Math.Round(DesignClientSize.Height * scale));
-        var minimumSize = new Size(
-            (int)Math.Round(DesignMinimumSize.Width * scale),
-            (int)Math.Round(DesignMinimumSize.Height * scale));
-        MinimumSize = minimumSize;
-        var workingArea = Screen.FromControl(this).WorkingArea;
-        var maxWidth = Math.Max(minimumSize.Width, workingArea.Width - 24);
-        var maxHeight = Math.Max(minimumSize.Height, workingArea.Height - 24);
-        ClientSize = new Size(
-            Math.Min(desiredClientSize.Width, maxWidth),
-            Math.Min(desiredClientSize.Height, maxHeight));
-        var x = Math.Clamp(Left, workingArea.Left, workingArea.Right - Width);
-        var y = Math.Clamp(Top, workingArea.Top, workingArea.Bottom - Height);
-        Location = new Point(x, y);
+        _content.AutoScrollMinSize = Size.Empty;
+        _content.AutoScrollPosition = Point.Empty;
+        _content.PerformLayout();
     }
 
     private void ShowInstallPage()
@@ -253,7 +213,7 @@ internal sealed class InstallerForm : Form
         ConfigureButton(_installButton, "설치", true);
         _installButton.Click += InstallButtonClicked;
         _content.Controls.Add(_installButton);
-        EnsureResponsiveLayout();
+        ResetScrollLayout();
     }
 
     private void ShowUpdatePage(string installedRoot, Version installedVersion)
@@ -285,7 +245,7 @@ internal sealed class InstallerForm : Form
         _content.Controls.Add(_progress);
 
         _content.Controls.Add(CreateLabel("바로가기와 사용자 설정은 그대로 유지됩니다.", new Point(36, 304), new Size(668, 24), 9.5f, FontStyle.Regular, Muted));
-        EnsureResponsiveLayout();
+        ResetScrollLayout();
     }
 
     private void ShowRepairPage(string installedRoot, Version installedVersion)
@@ -318,7 +278,7 @@ internal sealed class InstallerForm : Form
         ConfigureButton(cancelButton, "취소", false);
         cancelButton.Click += (_, _) => Close();
         _content.Controls.Add(cancelButton);
-        EnsureResponsiveLayout();
+        ResetScrollLayout();
     }
     private void BrowseInstallFolder()
     {
@@ -442,7 +402,7 @@ internal sealed class InstallerForm : Form
         launchButton.Click += (_, _) => LaunchInstalledApplication();
         _content.Controls.Add(closeButton);
         _content.Controls.Add(launchButton);
-        EnsureResponsiveLayout();
+        ResetScrollLayout();
     }
 
     private void ShowMaintenanceCompletePage()
@@ -468,7 +428,7 @@ internal sealed class InstallerForm : Form
         launchButton.Click += (_, _) => LaunchInstalledApplication();
         _content.Controls.Add(closeButton);
         _content.Controls.Add(launchButton);
-        EnsureResponsiveLayout();
+        ResetScrollLayout();
     }
 
     private void CreateDesktopShortcut(Button button)

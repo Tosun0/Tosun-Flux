@@ -116,7 +116,7 @@ public partial class MainWindow : Window
         EnableAcrylicBackdrop(this);
     }
 
-    private static void EnableAcrylicBackdrop(Window window)
+    private static void EnableAcrylicBackdrop(Window window, bool useNativeCorners = true)
     {
         var handle = new WindowInteropHelper(window).Handle;
         if (HwndSource.FromHwnd(handle) is HwndSource source)
@@ -126,7 +126,7 @@ public partial class MainWindow : Window
         DwmExtendFrameIntoClientArea(handle, ref margins);
         var backdrop = 3; // Acrylic/transient window backdrop on Windows 11.
         DwmSetWindowAttribute(handle, 38, ref backdrop, sizeof(int));
-        var corners = 2;
+        var corners = useNativeCorners ? 2 : 1;
         DwmSetWindowAttribute(handle, 33, ref corners, sizeof(int));
         ApplySystemTitleBarTheme(handle);
     }
@@ -736,7 +736,7 @@ public partial class MainWindow : Window
             ResizeMode = ResizeMode.NoResize,
             ShowInTaskbar = false,
         };
-        helpWindow.SourceInitialized += (_, _) => EnableAcrylicBackdrop(helpWindow);
+        helpWindow.SourceInitialized += (_, _) => EnableHelpBackdrop(helpWindow);
 
         helpWindow.Resources[typeof(System.Windows.Controls.Button)] = FindResource(typeof(System.Windows.Controls.Button));
         helpWindow.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = FindResource(typeof(System.Windows.Controls.Primitives.ScrollBar));
@@ -748,10 +748,15 @@ public partial class MainWindow : Window
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(16) });
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var header = new Grid();
+        var header = new Grid
+        {
+            MinHeight = 64,
+            Background = System.Windows.Media.Brushes.Transparent,
+        };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var heading = new StackPanel();
+        heading.VerticalAlignment = VerticalAlignment.Center;
         heading.Children.Add(new TextBlock
         {
             Text = "변환 도움말",
@@ -779,11 +784,19 @@ public partial class MainWindow : Window
             Background = (System.Windows.Media.Brush)FindResource("SecondaryBrush"),
             Foreground = (System.Windows.Media.Brush)FindResource("SecondaryTextBrush"),
             ToolTip = "닫기",
+            VerticalAlignment = VerticalAlignment.Center,
         };
         closeButton.Click += (_, _) => helpWindow.Close();
         Grid.SetColumn(closeButton, 1);
         header.Children.Add(closeButton);
-        header.MouseLeftButtonDown += (_, _) => helpWindow.DragMove();
+        header.MouseLeftButtonDown += (_, args) =>
+        {
+            if (args.OriginalSource is System.Windows.Controls.Button)
+                return;
+
+            helpWindow.DragMove();
+            args.Handled = true;
+        };
         layout.Children.Add(header);
 
         var guideStack = new StackPanel();
@@ -844,12 +857,14 @@ public partial class MainWindow : Window
         {
             Background = (System.Windows.Media.Brush)FindResource("StrongGlassBrush"),
             CornerRadius = new CornerRadius(30),
-            Padding = new Thickness(2),
+            Padding = new Thickness(1),
+            ClipToBounds = true,
             Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Colors.Black, BlurRadius = 34, ShadowDepth = 10, Opacity = 0.42 },
             Child = new Border
             {
                 Background = (System.Windows.Media.Brush)FindResource("GlassBrush"),
-                CornerRadius = new CornerRadius(28),
+                CornerRadius = new CornerRadius(29),
+                ClipToBounds = true,
                 Child = layout,
             },
         };
@@ -1005,6 +1020,49 @@ public partial class MainWindow : Window
         WorkspaceGrid.IsEnabled = !updating;
     }
 
+    private static void EnableHelpBackdrop(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero)
+            return;
+
+        if (HwndSource.FromHwnd(handle) is HwndSource source)
+            source.CompositionTarget.BackgroundColor = Colors.Transparent;
+
+        var margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+        DwmExtendFrameIntoClientArea(handle, ref margins);
+
+        var (width, height, radius) = GetRoundedWindowMetrics(window, 30);
+        var blurRegion = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2);
+        if (blurRegion != IntPtr.Zero)
+        {
+            var blurBehind = new DwmBlurBehind
+            {
+                Flags = DwmBlurBehindEnable | DwmBlurBehindRegion,
+                Enable = true,
+                Region = blurRegion,
+                TransitionOnMaximized = false,
+            };
+            DwmEnableBlurBehindWindow(handle, ref blurBehind);
+            DeleteObject(blurRegion);
+        }
+
+        var windowRegion = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2);
+        if (windowRegion != IntPtr.Zero && SetWindowRgn(handle, windowRegion, true) == 0)
+            DeleteObject(windowRegion);
+
+        ApplySystemTitleBarTheme(handle);
+    }
+
+    private static (int Width, int Height, int Radius) GetRoundedWindowMetrics(Window window, double radiusDip)
+    {
+        var dpi = VisualTreeHelper.GetDpi(window);
+        var width = Math.Max(1, (int)Math.Round(window.ActualWidth * dpi.DpiScaleX));
+        var height = Math.Max(1, (int)Math.Round(window.ActualHeight * dpi.DpiScaleY));
+        var radius = Math.Max(1, (int)Math.Round(radiusDip * dpi.DpiScaleX));
+        return (width, height, radius);
+    }
+
     private static string LoadOutputPath()
     {
         var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Tosun Flux-Output");
@@ -1052,4 +1110,29 @@ public partial class MainWindow : Window
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmEnableBlurBehindWindow(IntPtr hwnd, ref DwmBlurBehind blurBehind);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(IntPtr objectHandle);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DwmBlurBehind
+    {
+        public int Flags;
+        [MarshalAs(UnmanagedType.Bool)] public bool Enable;
+        public IntPtr Region;
+        [MarshalAs(UnmanagedType.Bool)] public bool TransitionOnMaximized;
+    }
+
+    private const int DwmBlurBehindEnable = 0x1;
+    private const int DwmBlurBehindRegion = 0x2;
 }

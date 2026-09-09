@@ -15,7 +15,7 @@
             <Setter Property="Background" Value="{StaticResource GlassBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="CornerRadius" Value="28" />
-            <Setter Property="Padding" Value="24" />
+            <Setter Property="Padding" Value="22" />
             <Setter Property="Effect">
                 <Setter.Value>
                     <DropShadowEffect Color="#000000" BlurRadius="30" ShadowDepth="8" Opacity="0.35" />
@@ -199,13 +199,13 @@
             <Ellipse.Fill><RadialGradientBrush><GradientStop Color="#52685DBD" Offset="0" /><GradientStop Color="#00685DBD" Offset="1" /></RadialGradientBrush></Ellipse.Fill>
         </Ellipse>
 
-        <Grid Margin="32">
+        <Grid Margin="24">
             <Grid.RowDefinitions>
-                <RowDefinition Height="116" />
-                <RowDefinition Height="16" />
+                <RowDefinition Height="96" />
+                <RowDefinition Height="12" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="16" />
-                <RowDefinition Height="150" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="120" />
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0">
@@ -214,8 +214,11 @@
                     <TextBlock Text="TOSUN FLUX" FontSize="34" FontWeight="Black" Foreground="#FFFFFFFF" />
                     <TextBlock Text="토순의 파일 컨버터  ·  파일을 넣고 형식을 골라 변환하세요" Margin="2,8,0,0" FontSize="14" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                 </StackPanel>
-                <Button x:Name="UpdateButton" Grid.Column="1" Visibility="Collapsed" Content="업데이트" Padding="14,9" Margin="12,0" VerticalAlignment="Center" Click="UpdateButton_Click" />
-                <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="112" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="CheckUpdateButton" Content="업데이트 확인" Padding="14,9" Background="{StaticResource SecondaryBrush}" Foreground="{StaticResource SecondaryTextBrush}" Click="CheckUpdateButton_Click" />
+                    <Button x:Name="UpdateButton" Visibility="Collapsed" Content="업데이트" Padding="14,9" Margin="8,0,12,0" Click="UpdateButton_Click" />
+                </StackPanel>
+                <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Grid>
 
             <Grid Grid.Row="2">

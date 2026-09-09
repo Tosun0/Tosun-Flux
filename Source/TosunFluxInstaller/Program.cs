@@ -10,7 +10,7 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.2";
+    internal const string ProductVersion = "1.0.3";
     internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
@@ -31,7 +31,8 @@ internal static class Program
             if (args.Any(item => item.Equals("--silent", StringComparison.OrdinalIgnoreCase)))
             {
                 var installRoot = InstallerOperations.GetInitialInstallRoot();
-                InstallerOperations.Install(new InstallOptions(installRoot, true, true), new Progress<InstallProgress>(_ => { }));
+                var isFreshInstall = !InstallerOperations.TryGetInstalledRoot(out _);
+                InstallerOperations.Install(new InstallOptions(installRoot, isFreshInstall, isFreshInstall), new Progress<InstallProgress>(_ => { }));
                 return;
             }
             Application.Run(new InstallerForm());
@@ -70,6 +71,8 @@ internal sealed class InstallerForm : Form
     private readonly Button _installButton = new();
     private string _installedRoot = string.Empty;
     private InstallResult _installResult;
+    private bool _isMaintenanceOperation;
+    private bool _isUpdateOperation;
 
     private static readonly Color Ink = Color.FromArgb(28, 34, 50);
     private static readonly Color Muted = Color.FromArgb(92, 102, 122);
@@ -83,7 +86,7 @@ internal sealed class InstallerForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = $"{Program.ProductName} 설치";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(740, 620);
+        ClientSize = new Size(740, 700);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
@@ -93,9 +96,21 @@ internal sealed class InstallerForm : Form
 
         BuildShell();
         if (InstallerOperations.TryGetInstalledRoot(out var installedRoot, out var installedVersion))
-            ShowMaintenancePage(installedRoot, installedVersion);
+        {
+            if (installedVersion != Version.Parse(Program.ProductVersion))
+            {
+                ShowUpdatePage(installedRoot, installedVersion);
+                Shown += async (_, _) => await InstallToPathAsync(installedRoot, false, false);
+            }
+            else
+            {
+                ShowRepairPage(installedRoot, installedVersion);
+            }
+        }
         else
+        {
             ShowInstallPage();
+        }
     }
 
     private void BuildShell()
@@ -135,6 +150,8 @@ internal sealed class InstallerForm : Form
 
     private void ShowInstallPage()
     {
+        _isMaintenanceOperation = false;
+        _isUpdateOperation = false;
         _content.Controls.Clear();
         _installPath.Text = InstallerOperations.GetInitialInstallRoot();
 
@@ -184,22 +201,47 @@ internal sealed class InstallerForm : Form
         _content.Controls.Add(_installButton);
     }
 
-    private void ShowMaintenancePage(string installedRoot, Version installedVersion)
+    private void ShowUpdatePage(string installedRoot, Version installedVersion)
     {
         _installedRoot = installedRoot;
+        _isMaintenanceOperation = true;
+        _isUpdateOperation = true;
         var targetVersion = Version.Parse(Program.ProductVersion);
-        var requiresUpdate = installedVersion != targetVersion;
-        Text = requiresUpdate ? $"{Program.ProductName} 업데이트" : $"{Program.ProductName} 유지 관리";
+        Text = $"{Program.ProductName} 업데이트";
         _content.Controls.Clear();
 
-        _content.Controls.Add(CreateLabel(
-            requiresUpdate ? "업데이트할 수 있습니다" : "이미 최신 버전입니다",
-            new Point(36, 22), new Size(668, 34), 17, FontStyle.Bold, Ink));
-        _content.Controls.Add(CreateLabel(
-            requiresUpdate
-                ? $"Tosun Flux v{installedVersion}에서 v{targetVersion}으로 업데이트합니다."
-                : "같은 버전을 다시 적용하거나 프로그램을 제거할 수 있습니다.",
-            new Point(36, 61), new Size(668, 24), 10, FontStyle.Regular, Muted));
+        _content.Controls.Add(CreateLabel("업데이트를 시작합니다", new Point(36, 24), new Size(668, 34), 17, FontStyle.Bold, Ink));
+        _content.Controls.Add(CreateLabel($"Tosun Flux v{installedVersion}에서 v{targetVersion}으로 자동 업데이트합니다.", new Point(36, 63), new Size(668, 24), 10, FontStyle.Regular, Muted));
+
+        var installed = new Panel { Location = new Point(36, 112), Size = new Size(668, 76), BackColor = Surface };
+        installed.Controls.Add(CreateLabel($"현재 설치 위치  ·  v{installedVersion} → v{targetVersion}", new Point(16, 11), new Size(636, 20), 9, FontStyle.Bold, Muted));
+        installed.Controls.Add(CreateLabel(installedRoot, new Point(16, 36), new Size(636, 24), 10, FontStyle.Regular, Ink));
+        _content.Controls.Add(installed);
+
+        _status.Location = new Point(36, 232);
+        _status.Size = new Size(668, 24);
+        _status.Text = "업데이트를 준비하는 중... 0%";
+        _status.ForeColor = Muted;
+        _content.Controls.Add(_status);
+
+        _progress.Location = new Point(36, 268);
+        _progress.Size = new Size(668, 14);
+        _progress.Style = ProgressBarStyle.Continuous;
+        _content.Controls.Add(_progress);
+
+        _content.Controls.Add(CreateLabel("바로가기와 사용자 설정은 그대로 유지됩니다.", new Point(36, 304), new Size(668, 24), 9.5f, FontStyle.Regular, Muted));
+    }
+
+    private void ShowRepairPage(string installedRoot, Version installedVersion)
+    {
+        _installedRoot = installedRoot;
+        _isMaintenanceOperation = true;
+        _isUpdateOperation = false;
+        Text = $"{Program.ProductName} 복구";
+        _content.Controls.Clear();
+
+        _content.Controls.Add(CreateLabel("이미 최신 버전입니다", new Point(36, 24), new Size(668, 34), 17, FontStyle.Bold, Ink));
+        _content.Controls.Add(CreateLabel($"Tosun Flux v{installedVersion}을 다시 적용해 설치 파일을 복구할 수 있습니다.", new Point(36, 63), new Size(668, 24), 10, FontStyle.Regular, Muted));
 
         var installed = new Panel { Location = new Point(36, 112), Size = new Size(668, 76), BackColor = Surface };
         installed.Controls.Add(CreateLabel($"현재 설치 위치  ·  v{installedVersion}", new Point(16, 11), new Size(636, 20), 9, FontStyle.Bold, Muted));
@@ -207,34 +249,19 @@ internal sealed class InstallerForm : Form
         _content.Controls.Add(installed);
 
         var notice = new Panel { Location = new Point(36, 215), Size = new Size(668, 76), BackColor = Surface };
-        notice.Controls.Add(CreateLabel(
-            requiresUpdate
-                ? $"새 버전 v{targetVersion}을 현재 설치 위치에 적용합니다."
-                : $"v{targetVersion} 파일을 현재 설치 위치에 다시 적용해 복구합니다.",
-            new Point(16, 13), new Size(636, 22), 9.5f, FontStyle.Bold, Ink));
-        notice.Controls.Add(CreateLabel("제거는 Windows의 설치된 앱 목록에서 실행하는 것과 같은 경로를 사용합니다.", new Point(16, 40), new Size(636, 20), 9, FontStyle.Regular, Muted));
+        notice.Controls.Add(CreateLabel("복구는 앱과 백엔드 파일만 다시 적용합니다.", new Point(16, 13), new Size(636, 22), 9.5f, FontStyle.Bold, Ink));
+        notice.Controls.Add(CreateLabel("제거는 Windows 설정의 설치된 앱에서 실행할 수 있습니다.", new Point(16, 40), new Size(636, 20), 9, FontStyle.Regular, Muted));
         _content.Controls.Add(notice);
 
         var repairButton = new Button { Location = new Point(36, 324), Size = new Size(668, 48) };
-        ConfigureButton(repairButton, requiresUpdate ? "업데이트" : "복구", true);
+        ConfigureButton(repairButton, "복구", true);
         repairButton.Click += RepairButtonClicked;
         _content.Controls.Add(repairButton);
 
-        var removeButton = new Button { Location = new Point(36, 397), Size = new Size(321, 48) };
-        var cancelButton = new Button { Location = new Point(383, 397), Size = new Size(321, 48) };
-        ConfigureButton(removeButton, "Tosun Flux 제거", false);
+        var cancelButton = new Button { Location = new Point(36, 397), Size = new Size(668, 48) };
         ConfigureButton(cancelButton, "취소", false);
-        removeButton.Click += (_, _) => RemoveInstalledApplication();
         cancelButton.Click += (_, _) => Close();
-        _content.Controls.Add(removeButton);
         _content.Controls.Add(cancelButton);
-    }
-
-    private void RemoveInstalledApplication()
-    {
-        InstallerOperations.Uninstall();
-        if (!InstallerOperations.TryGetInstalledRoot(out _))
-            Close();
     }
     private void BrowseInstallFolder()
     {
@@ -258,7 +285,7 @@ internal sealed class InstallerForm : Form
 
     private async void RepairButtonClicked(object? sender, EventArgs e)
     {
-        await InstallToPathAsync(_installedRoot, true, true);
+        await InstallToPathAsync(_installedRoot, false, false);
     }
 
     private async Task InstallToPathAsync(string installRoot, bool createDesktopShortcut, bool createStartMenuShortcut)
@@ -267,7 +294,7 @@ internal sealed class InstallerForm : Form
         var progress = new Progress<InstallProgress>(value =>
         {
             _progress.Value = Math.Clamp(value.Percent, 0, 100);
-            _status.Text = value.Message;
+            _status.Text = $"{value.Percent}%  ·  {value.Message}";
         });
 
         try
@@ -314,12 +341,18 @@ internal sealed class InstallerForm : Form
         if (installing)
         {
             _progress.Value = 0;
-            _status.Text = "설치를 준비하는 중...";
+            _status.Text = _isUpdateOperation ? "업데이트를 준비하는 중... 0%" : "설치를 준비하는 중... 0%";
         }
     }
 
     private void ShowCompletePage()
     {
+        if (_isMaintenanceOperation)
+        {
+            ShowMaintenanceCompletePage();
+            return;
+        }
+
         _content.Controls.Clear();
         _content.Controls.Add(CreateLabel("✓", new Point(36, 25), new Size(70, 70), 36, FontStyle.Bold, Accent));
         _content.Controls.Add(CreateLabel("설치가 완료되었습니다", new Point(112, 30), new Size(592, 35), 17, FontStyle.Bold, Ink));
@@ -346,6 +379,31 @@ internal sealed class InstallerForm : Form
 
         var closeButton = new Button { Location = new Point(36, 418), Size = new Size(321, 50) };
         var launchButton = new Button { Location = new Point(383, 418), Size = new Size(321, 50) };
+        ConfigureButton(closeButton, "닫기", false);
+        ConfigureButton(launchButton, "Tosun Flux 실행", true);
+        closeButton.Click += (_, _) => Close();
+        launchButton.Click += (_, _) => LaunchInstalledApplication();
+        _content.Controls.Add(closeButton);
+        _content.Controls.Add(launchButton);
+    }
+
+    private void ShowMaintenanceCompletePage()
+    {
+        _content.Controls.Clear();
+        var action = _isUpdateOperation ? "업데이트" : "복구";
+        _content.Controls.Add(CreateLabel("✓", new Point(36, 25), new Size(70, 70), 36, FontStyle.Bold, Accent));
+        _content.Controls.Add(CreateLabel($"{action}가 완료되었습니다", new Point(112, 30), new Size(592, 35), 17, FontStyle.Bold, Ink));
+        _content.Controls.Add(CreateLabel("앱과 변환 백엔드 연결, Windows 등록까지 확인했습니다.", new Point(112, 69), new Size(592, 24), 10, FontStyle.Regular, Muted));
+
+        var installed = new Panel { Location = new Point(36, 116), Size = new Size(668, 69), BackColor = Surface };
+        installed.Controls.Add(CreateLabel("설치 위치", new Point(16, 10), new Size(636, 20), 9, FontStyle.Bold, Muted));
+        installed.Controls.Add(CreateLabel(_installedRoot, new Point(16, 34), new Size(636, 24), 10, FontStyle.Regular, Ink));
+        _content.Controls.Add(installed);
+
+        _content.Controls.Add(CreateLabel("바로가기와 사용자 설정은 변경하지 않았습니다.", new Point(36, 215), new Size(668, 30), 9.5f, FontStyle.Regular, Muted));
+
+        var closeButton = new Button { Location = new Point(36, 286), Size = new Size(321, 50) };
+        var launchButton = new Button { Location = new Point(383, 286), Size = new Size(321, 50) };
         ConfigureButton(closeButton, "닫기", false);
         ConfigureButton(launchButton, "Tosun Flux 실행", true);
         closeButton.Click += (_, _) => Close();

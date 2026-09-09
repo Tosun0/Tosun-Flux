@@ -21,9 +21,6 @@ public partial class MainWindow : Window
     private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private UpdateInfo? _availableUpdate;
     private bool _allowClose;
-    private bool _customResolutionExpanded;
-    private double _heightBeforeCustomResolution;
-    private const double CustomResolutionWindowHeight = 1020;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",
@@ -217,17 +214,6 @@ public partial class MainWindow : Window
         AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution;
         var showCustomResolution = supportsVisualOptions && !pdfCompressionOnly && customResolution;
         CustomSizePanel.Visibility = showCustomResolution ? Visibility.Visible : Visibility.Collapsed;
-        if (showCustomResolution && !_customResolutionExpanded)
-        {
-            _heightBeforeCustomResolution = Height;
-            Height = Math.Max(Height, CustomResolutionWindowHeight);
-            _customResolutionExpanded = true;
-        }
-        else if (!showCustomResolution && _customResolutionExpanded)
-        {
-            Height = _heightBeforeCustomResolution > 0 ? _heightBeforeCustomResolution : Height;
-            _customResolutionExpanded = false;
-        }
         FitChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         FillChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         StretchChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
@@ -434,7 +420,7 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         await VerifyBackendAsync();
-        await CheckForUpdatesAsync();
+        await CheckForUpdatesAsync(false);
     }
 
     private async Task VerifyBackendAsync()
@@ -461,7 +447,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task CheckForUpdatesAsync()
+    private async Task CheckForUpdatesAsync(bool notify)
     {
         try
         {
@@ -471,11 +457,35 @@ public partial class MainWindow : Window
             {
                 UpdateButton.Content = $"v{_availableUpdate.Version} 업데이트";
                 UpdateButton.Visibility = Visibility.Visible;
+                StatusText.Text = $"새 버전 v{_availableUpdate.Version}을 사용할 수 있습니다.";
+            }
+            else if (notify)
+            {
+                StatusText.Text = $"최신 버전 v{currentVersion.Major}.{currentVersion.Minor}.{currentVersion.Build}입니다.";
+                System.Windows.MessageBox.Show(this, "현재 최신 버전을 사용하고 있습니다.", "업데이트 확인", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
-        catch
+        catch (Exception error)
         {
-            // 네트워크가 없어도 로컬 변환은 계속 사용할 수 있습니다.
+            if (notify)
+            {
+                StatusText.Text = "업데이트를 확인하지 못했습니다.";
+                System.Windows.MessageBox.Show(this, error.Message, "업데이트 확인", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+    }
+
+    private async void CheckUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateButton.IsEnabled = false;
+        StatusText.Text = "업데이트 확인 중…";
+        try
+        {
+            await CheckForUpdatesAsync(true);
+        }
+        finally
+        {
+            CheckUpdateButton.IsEnabled = true;
         }
     }
 
@@ -483,9 +493,6 @@ public partial class MainWindow : Window
     {
         if (_availableUpdate is null)
             return;
-        if (System.Windows.MessageBox.Show(this, $"Tosun Flux v{_availableUpdate.Version}을 다운로드하고 설치할까요?", "업데이트", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes)
-            return;
-
         UpdateButton.IsEnabled = false;
         Progress.Maximum = 100;
         Progress.Value = 0;
@@ -501,7 +508,7 @@ public partial class MainWindow : Window
             var installer = new ProcessStartInfo(installerPath)
             {
                 UseShellExecute = true,
-                Arguments = $"--wait-for-pid {Environment.ProcessId}"
+                Arguments = $"--update --wait-for-pid {Environment.ProcessId}"
             };
             Process.Start(installer);
             ExitApplication();

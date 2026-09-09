@@ -85,7 +85,7 @@ internal static class UpdateService
     private static HttpClient CreateClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Tosun-Flux/0.4.1");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Tosun-Flux/0.4.2");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
     }

@@ -14,8 +14,8 @@
     <Description>토순의 파일 컨버터</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\assets\Tosun.ico</ApplicationIcon>
-    <Version>0.4.1</Version>
-    <InformationalVersion>0.4.1</InformationalVersion>
+    <Version>0.4.2</Version>
+    <InformationalVersion>0.4.2</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="..\assets\tosun-floating-v1.png" Link="Assets\tosun-floating-v1.png" />

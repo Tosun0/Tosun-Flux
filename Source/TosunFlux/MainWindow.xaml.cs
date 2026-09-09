@@ -733,7 +733,7 @@ public partial class MainWindow : Window
         };
 
         helpWindow.Resources[typeof(System.Windows.Controls.Button)] = FindResource(typeof(System.Windows.Controls.Button));
-        helpWindow.Resources[typeof(ScrollBar)] = FindResource(typeof(ScrollBar));
+        helpWindow.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = FindResource(typeof(System.Windows.Controls.Primitives.ScrollBar));
 
         var layout = new Grid { Margin = new Thickness(24) };
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

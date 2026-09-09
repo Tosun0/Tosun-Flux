@@ -209,12 +209,13 @@
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="190" /></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="160" /></Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="TOSUN FLUX" FontSize="34" FontWeight="Black" Foreground="#FFFFFFFF" />
                     <TextBlock Text="토순의 파일 컨버터  ·  파일을 넣고 형식을 골라 변환하세요" Margin="2,8,0,0" FontSize="14" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                 </StackPanel>
-                <Image Grid.Column="1" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="112" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Button x:Name="UpdateButton" Grid.Column="1" Visibility="Collapsed" Content="업데이트" Padding="14,9" Margin="12,0" VerticalAlignment="Center" Click="UpdateButton_Click" />
+                <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="112" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Grid>
 
             <Grid Grid.Row="2">
@@ -254,12 +255,26 @@
                 <Border Grid.Column="2" Style="{StaticResource GlassCard}">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" /><RowDefinition Height="14" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="6" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" /><RowDefinition Height="Auto" /><RowDefinition Height="6" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" /><RowDefinition Height="Auto" /><RowDefinition Height="6" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" /><RowDefinition Height="Auto" /><RowDefinition Height="6" /><RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Text="변환 설정" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                         <Grid Grid.Row="2">
@@ -279,8 +294,16 @@
                         </Grid>
                         <Grid Grid.Row="8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <Border CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="ResolutionBox" MinHeight="42" /></Border>
+                            <Border CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="ResolutionBox" MinHeight="42" SelectionChanged="ResolutionBox_SelectionChanged" /></Border>
                             <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="AspectBox" MinHeight="42" /></Border>
+                        </Grid>
+                        <Grid x:Name="CustomSizePanel" Grid.Row="9" Visibility="Collapsed" Margin="0,8,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" /><ColumnDefinition Width="30" /><ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border CornerRadius="15" ClipToBounds="True"><TextBox x:Name="CustomWidthBox" Text="1920" MaxLength="5" MinHeight="42" VerticalContentAlignment="Center" ToolTip="가로 픽셀" /></Border>
+                            <TextBlock Grid.Column="1" Text="×" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="14" />
+                            <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><TextBox x:Name="CustomHeightBox" Text="1080" MaxLength="5" MinHeight="42" VerticalContentAlignment="Center" ToolTip="세로 픽셀" /></Border>
                         </Grid>
                         <TextBlock Grid.Row="10" Text="화면 맞춤" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                         <Grid Grid.Row="12">

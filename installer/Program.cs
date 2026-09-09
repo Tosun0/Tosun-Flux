@@ -3,15 +3,17 @@ using System.Drawing;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Win32;
 using System.Windows.Forms;
 
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "0.3.0";
+    internal const string ProductVersion = "0.4.0";
     internal const string Publisher = "Tosun";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
+    internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
 
     [STAThread]
     private static void Main(string[] args)
@@ -25,6 +27,13 @@ internal static class Program
                 return;
             }
 
+            WaitForPreviousApplication(args);
+            if (args.Any(item => item.Equals("--silent", StringComparison.OrdinalIgnoreCase)))
+            {
+                var installRoot = InstallerOperations.GetInitialInstallRoot();
+                InstallerOperations.Install(new InstallOptions(installRoot, true, true), new Progress<InstallProgress>(_ => { }));
+                return;
+            }
             Application.Run(new InstallerForm());
         }
         catch (Exception error)
@@ -33,156 +42,151 @@ internal static class Program
             Environment.ExitCode = 1;
         }
     }
+
+    private static void WaitForPreviousApplication(string[] args)
+    {
+        var index = Array.FindIndex(args, item => item.Equals("--wait-for-pid", StringComparison.OrdinalIgnoreCase));
+        if (index < 0 || index + 1 >= args.Length || !int.TryParse(args[index + 1], out var processId))
+            return;
+        try
+        {
+            Process.GetProcessById(processId).WaitForExit(30000);
+        }
+        catch (ArgumentException)
+        {
+            // 이전 앱이 이미 종료된 경우 바로 설치 화면을 엽니다.
+        }
+    }
 }
 
 internal sealed class InstallerForm : Form
 {
-    private readonly TextBox _installPath = new();
-    private readonly Button _browseButton = new();
-    private readonly Button _installButton = new();
-    private readonly ProgressBar _progress = new();
-    private readonly Label _status = new();
     private readonly Panel _content = new();
-    private readonly Button _desktopShortcutButton = new();
-    private readonly Button _startMenuShortcutButton = new();
-    private readonly Button _launchButton = new();
-    private readonly Button _closeButton = new();
-    private string _selectedInstallRoot = string.Empty;
+    private readonly TextBox _installPath = new();
+    private readonly CheckBox _desktopShortcut = new();
+    private readonly CheckBox _startMenuShortcut = new();
+    private readonly Label _status = new();
+    private readonly ProgressBar _progress = new();
+    private readonly Button _installButton = new();
+    private string _installedRoot = string.Empty;
+    private InstallResult _installResult;
 
-    private static readonly Color Ink = Color.FromArgb(30, 38, 58);
-    private static readonly Color Muted = Color.FromArgb(102, 112, 134);
-    private static readonly Color Accent = Color.FromArgb(104, 123, 232);
-    private static readonly Color AccentDark = Color.FromArgb(76, 95, 198);
+    private static readonly Color Ink = Color.FromArgb(28, 34, 50);
+    private static readonly Color Muted = Color.FromArgb(92, 102, 122);
+    private static readonly Color Accent = Color.FromArgb(105, 122, 229);
+    private static readonly Color AccentDark = Color.FromArgb(79, 95, 199);
+    private static readonly Color Surface = Color.FromArgb(246, 248, 253);
 
     public InstallerForm()
     {
+        AutoScaleDimensions = new SizeF(96, 96);
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = $"{Program.ProductName} 설치";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(680, 500);
-        MinimumSize = new Size(640, 460);
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        ClientSize = new Size(740, 620);
+        FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
-        MinimizeBox = false;
+        MinimizeBox = true;
         BackColor = Color.White;
-        AutoScaleMode = AutoScaleMode.Dpi;
+        Font = new Font("Segoe UI", 9.5f);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
 
-        BuildLayout();
+        BuildShell();
+        ShowInstallPage();
     }
 
-    private void BuildLayout()
+    private void BuildShell()
     {
         var header = new Panel
         {
-            Dock = DockStyle.Top,
-            Height = 118,
-            BackColor = Color.FromArgb(241, 244, 255),
-            Padding = new Padding(34, 22, 34, 16)
+            Location = Point.Empty,
+            Size = new Size(ClientSize.Width, 126),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.FromArgb(239, 242, 255)
         };
-        header.Controls.Add(new Label
-        {
-            Text = "TOSUN FLUX",
-            Dock = DockStyle.Top,
-            Height = 40,
-            Font = new Font("Segoe UI", 21, FontStyle.Bold),
-            ForeColor = Ink
-        });
-        header.Controls.Add(new Label
-        {
-            Text = "통합 파일 변환기를 설치합니다",
-            Dock = DockStyle.Top,
-            Height = 24,
-            Font = new Font("Segoe UI", 10.5f),
-            ForeColor = Muted
-        });
-        header.Controls.Add(new Label
-        {
-            Text = $"게시자 {Program.Publisher}  ·  버전 {Program.ProductVersion}",
-            Dock = DockStyle.Bottom,
-            Height = 22,
-            Font = new Font("Segoe UI", 9f),
-            ForeColor = Muted
-        });
-        Controls.Add(header);
+        header.Controls.Add(CreateLabel("TOSUN FLUX", new Point(36, 24), new Size(520, 40), 22, FontStyle.Bold, Ink));
+        header.Controls.Add(CreateLabel("토순의 파일 컨버터 설치 프로그램", new Point(38, 67), new Size(520, 25), 10.5f, FontStyle.Regular, Muted));
+        header.Controls.Add(CreateLabel($"게시자 {Program.Publisher}  ·  v{Program.ProductVersion}", new Point(38, 95), new Size(520, 20), 9, FontStyle.Regular, Muted));
 
-        _content.Dock = DockStyle.Fill;
-        _content.Padding = new Padding(34, 24, 34, 22);
+        using var appIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
+        if (appIcon is not null)
+        {
+            header.Controls.Add(new PictureBox
+            {
+                Image = appIcon.ToBitmap(),
+                Location = new Point(642, 27),
+                Size = new Size(70, 70),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            });
+        }
+
+        _content.Location = new Point(0, 126);
+        _content.Size = new Size(ClientSize.Width, ClientSize.Height - 126);
+        _content.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        _content.BackColor = Color.White;
         Controls.Add(_content);
-        ShowInstallPage();
+        Controls.Add(header);
     }
 
     private void ShowInstallPage()
     {
         _content.Controls.Clear();
-        _selectedInstallRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Program.ProductName);
+        _installPath.Text = InstallerOperations.GetInitialInstallRoot();
 
-        _content.Controls.Add(CreateLabel("설치 위치", 13, FontStyle.Bold, Ink, DockStyle.Top, 30));
-        _content.Controls.Add(CreateLabel("Tosun Flux를 설치할 폴더를 선택하세요. 설치에는 관리자 권한이 필요합니다.", 9.5f, FontStyle.Regular, Muted, DockStyle.Top, 34));
+        _content.Controls.Add(CreateLabel("설치 준비", new Point(36, 20), new Size(668, 32), 16, FontStyle.Bold, Ink));
+        _content.Controls.Add(CreateLabel("설치 위치와 바로가기를 선택한 뒤 설치를 누르세요.", new Point(36, 56), new Size(668, 24), 10, FontStyle.Regular, Muted));
+        _content.Controls.Add(CreateLabel("설치 위치", new Point(36, 94), new Size(200, 23), 10, FontStyle.Bold, Ink));
 
-        var pathRow = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            Height = 44,
-            ColumnCount = 2,
-            RowCount = 1,
-            Margin = new Padding(0, 8, 0, 0)
-        };
-        pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
-        _installPath.Text = _selectedInstallRoot;
-        _installPath.Dock = DockStyle.Fill;
+        _installPath.Location = new Point(36, 122);
+        _installPath.Size = new Size(524, 34);
         _installPath.Font = new Font("Segoe UI", 10f);
-        _installPath.Margin = new Padding(0, 0, 10, 0);
         _installPath.BorderStyle = BorderStyle.FixedSingle;
-        pathRow.Controls.Add(_installPath, 0, 0);
-        ConfigureButton(_browseButton, "찾아보기", false);
-        _browseButton.Click -= BrowseButtonClicked;
-        _browseButton.Click += BrowseButtonClicked;
-        pathRow.Controls.Add(_browseButton, 1, 0);
-        _content.Controls.Add(pathRow);
+        _content.Controls.Add(_installPath);
 
-        _content.Controls.Add(CreateLabel("기본 위치: C:\\Program Files\\Tosun Flux", 9f, FontStyle.Regular, Muted, DockStyle.Top, 42));
+        var browseButton = new Button { Location = new Point(574, 120), Size = new Size(130, 38) };
+        ConfigureButton(browseButton, "찾아보기", false);
+        browseButton.Click += (_, _) => BrowseInstallFolder();
+        _content.Controls.Add(browseButton);
 
-        var info = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = 126,
-            BackColor = Color.FromArgb(248, 249, 253),
-            Padding = new Padding(18, 14, 18, 12)
-        };
-        info.Controls.Add(CreateLabel("설치 안내", 10.5f, FontStyle.Bold, Ink, DockStyle.Top, 24));
-        info.Controls.Add(CreateLabel("• 설치 후 Windows의 프로그램 설치 및 제거 목록에 Tosun Flux가 등록됩니다.\n• 설치 완료 후 바탕화면과 시작 메뉴 바로가기를 원하는 항목만 추가할 수 있습니다.\n• 기존 설치 폴더를 선택하면 필요한 파일을 새 버전으로 교체합니다.", 9.5f, FontStyle.Regular, Muted, DockStyle.Fill));
-        _content.Controls.Add(info);
+        _content.Controls.Add(CreateLabel("바로가기", new Point(36, 185), new Size(200, 23), 10, FontStyle.Bold, Ink));
+        ConfigureCheckBox(_desktopShortcut, "바탕화면에 Tosun Flux 바로가기 만들기", new Point(39, 216));
+        ConfigureCheckBox(_startMenuShortcut, "시작 메뉴에 Tosun Flux와 제거 바로가기 만들기", new Point(39, 251));
+        _desktopShortcut.Checked = true;
+        _startMenuShortcut.Checked = true;
+        _content.Controls.Add(_desktopShortcut);
+        _content.Controls.Add(_startMenuShortcut);
 
-        _progress.Dock = DockStyle.Bottom;
-        _progress.Height = 12;
-        _progress.Style = ProgressBarStyle.Continuous;
-        _progress.Visible = false;
-        _content.Controls.Add(_progress);
+        var notice = new Panel { Location = new Point(36, 298), Size = new Size(668, 73), BackColor = Surface };
+        notice.Controls.Add(CreateLabel("설치가 끝나기 전에 앱·백엔드 상태와 Windows 등록을 확인합니다.", new Point(16, 13), new Size(636, 22), 9.5f, FontStyle.Bold, Ink));
+        notice.Controls.Add(CreateLabel("기본 위치는 C:\\Program Files\\Tosun Flux이며 관리자 권한이 필요합니다.", new Point(16, 40), new Size(636, 20), 9, FontStyle.Regular, Muted));
+        _content.Controls.Add(notice);
 
-        _status.Dock = DockStyle.Bottom;
-        _status.Height = 28;
-        _status.TextAlign = ContentAlignment.MiddleLeft;
-        _status.Font = new Font("Segoe UI", 9f);
+        _status.Location = new Point(36, 382);
+        _status.Size = new Size(668, 22);
+        _status.Text = "설치를 시작할 준비가 되었습니다.";
         _status.ForeColor = Muted;
-        _status.Visible = false;
         _content.Controls.Add(_status);
 
+        _progress.Location = new Point(36, 411);
+        _progress.Size = new Size(668, 12);
+        _progress.Style = ProgressBarStyle.Continuous;
+        _content.Controls.Add(_progress);
+
+        _installButton.Location = new Point(36, 438);
+        _installButton.Size = new Size(668, 46);
         ConfigureButton(_installButton, "설치", true);
-        _installButton.Dock = DockStyle.Bottom;
-        _installButton.Height = 48;
-        _installButton.Margin = new Padding(0, 14, 0, 0);
-        _installButton.Click -= InstallButtonClicked;
         _installButton.Click += InstallButtonClicked;
         _content.Controls.Add(_installButton);
     }
 
-    private void BrowseButtonClicked(object? sender, EventArgs e)
+    private void BrowseInstallFolder()
     {
         using var dialog = new FolderBrowserDialog
         {
             Description = "Tosun Flux를 설치할 폴더를 선택하세요.",
-            SelectedPath = _installPath.Text
+            SelectedPath = _installPath.Text,
+            UseDescriptionForTitle = true
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
             _installPath.Text = dialog.SelectedPath;
@@ -190,30 +194,10 @@ internal sealed class InstallerForm : Form
 
     private async void InstallButtonClicked(object? sender, EventArgs e)
     {
-        var path = _installPath.Text.Trim();
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            MessageBox.Show("설치 위치를 입력하세요.", Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        if (!TryGetInstallRoot(out var installRoot))
             return;
-        }
 
-        try
-        {
-            path = Path.GetFullPath(path);
-        }
-        catch
-        {
-            MessageBox.Show("설치 위치가 올바르지 않습니다.", Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
-        if (path.Equals(Path.GetPathRoot(path), StringComparison.OrdinalIgnoreCase))
-        {
-            MessageBox.Show("드라이브 루트가 아닌 설치 폴더를 선택하세요.", Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
-        SetInstallingState(true);
+        SetInstalling(true);
         var progress = new Progress<InstallProgress>(value =>
         {
             _progress.Value = Math.Clamp(value.Percent, 0, 100);
@@ -222,24 +206,45 @@ internal sealed class InstallerForm : Form
 
         try
         {
-            await Task.Run(() => InstallerOperations.Install(path, progress));
-            _selectedInstallRoot = path;
+            var options = new InstallOptions(installRoot, _desktopShortcut.Checked, _startMenuShortcut.Checked);
+            _installResult = await Task.Run(() => InstallerOperations.Install(options, progress));
+            _installedRoot = installRoot;
             ShowCompletePage();
         }
         catch (Exception error)
         {
-            SetInstallingState(false);
-            MessageBox.Show(error.Message, Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            SetInstalling(false);
+            _status.Text = "설치를 완료하지 못했습니다.";
+            MessageBox.Show(this, error.Message, Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
-    private void SetInstallingState(bool installing)
+    private bool TryGetInstallRoot(out string installRoot)
     {
-        _installPath.Enabled = !installing;
-        _browseButton.Enabled = !installing;
+        installRoot = _installPath.Text.Trim();
+        try
+        {
+            installRoot = Path.GetFullPath(installRoot);
+        }
+        catch
+        {
+            MessageBox.Show(this, "설치 위치가 올바르지 않습니다.", Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(installRoot) || installRoot.Equals(Path.GetPathRoot(installRoot), StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, "드라이브 루트가 아닌 설치 폴더를 선택하세요.", Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+        return true;
+    }
+
+    private void SetInstalling(bool installing)
+    {
+        foreach (Control control in _content.Controls)
+            control.Enabled = !installing || control == _status || control == _progress;
         _installButton.Enabled = !installing;
-        _progress.Visible = installing;
-        _status.Visible = installing;
         if (installing)
         {
             _progress.Value = 0;
@@ -250,82 +255,102 @@ internal sealed class InstallerForm : Form
     private void ShowCompletePage()
     {
         _content.Controls.Clear();
-        _content.Controls.Add(CreateLabel("설치가 완료되었습니다", 17, FontStyle.Bold, Ink, DockStyle.Top, 42));
-        _content.Controls.Add(CreateLabel($"{Program.ProductName}가 다음 위치에 설치되었습니다.\n{_selectedInstallRoot}\n\n원하는 바로가기를 추가한 뒤 Tosun Flux를 실행할 수 있습니다.", 10.5f, FontStyle.Regular, Muted, DockStyle.Top, 98));
+        _content.Controls.Add(CreateLabel("✓", new Point(36, 25), new Size(70, 70), 36, FontStyle.Bold, Accent));
+        _content.Controls.Add(CreateLabel("설치가 완료되었습니다", new Point(112, 30), new Size(592, 35), 17, FontStyle.Bold, Ink));
+        _content.Controls.Add(CreateLabel("앱과 변환 백엔드 연결, Windows 등록까지 확인했습니다.", new Point(112, 69), new Size(592, 24), 10, FontStyle.Regular, Muted));
 
-        ConfigureButton(_desktopShortcutButton, "바탕화면 바로가기 추가", false);
-        ConfigureButton(_startMenuShortcutButton, "시작 메뉴 바로가기 추가", false);
-        _desktopShortcutButton.Dock = DockStyle.Top;
-        _desktopShortcutButton.Height = 42;
-        _desktopShortcutButton.Margin = new Padding(0, 5, 0, 5);
-        _startMenuShortcutButton.Dock = DockStyle.Top;
-        _startMenuShortcutButton.Height = 42;
-        _startMenuShortcutButton.Margin = new Padding(0, 5, 0, 5);
-        _desktopShortcutButton.Click -= AddDesktopShortcutClicked;
-        _desktopShortcutButton.Click += AddDesktopShortcutClicked;
-        _startMenuShortcutButton.Click -= AddStartMenuShortcutClicked;
-        _startMenuShortcutButton.Click += AddStartMenuShortcutClicked;
-        _content.Controls.Add(_startMenuShortcutButton);
-        _content.Controls.Add(_desktopShortcutButton);
+        var installed = new Panel { Location = new Point(36, 116), Size = new Size(668, 69), BackColor = Surface };
+        installed.Controls.Add(CreateLabel("설치 위치", new Point(16, 10), new Size(636, 20), 9, FontStyle.Bold, Muted));
+        installed.Controls.Add(CreateLabel(_installedRoot, new Point(16, 34), new Size(636, 24), 10, FontStyle.Regular, Ink));
+        _content.Controls.Add(installed);
 
-        var actions = new TableLayoutPanel
+        _content.Controls.Add(CreateLabel("바로가기", new Point(36, 211), new Size(200, 23), 10, FontStyle.Bold, Ink));
+        var desktopButton = new Button { Location = new Point(36, 242), Size = new Size(321, 44) };
+        var startButton = new Button { Location = new Point(383, 242), Size = new Size(321, 44) };
+        ConfigureButton(desktopButton, _installResult.DesktopShortcutCreated ? "바탕화면 바로가기 생성됨" : "바탕화면 바로가기 만들기", false);
+        ConfigureButton(startButton, _installResult.StartMenuShortcutCreated ? "시작 메뉴 바로가기 생성됨" : "시작 메뉴 바로가기 만들기", false);
+        desktopButton.Enabled = !_installResult.DesktopShortcutCreated;
+        startButton.Enabled = !_installResult.StartMenuShortcutCreated;
+        desktopButton.Click += (_, _) => CreateDesktopShortcut(desktopButton);
+        startButton.Click += (_, _) => CreateStartMenuShortcut(startButton);
+        _content.Controls.Add(desktopButton);
+        _content.Controls.Add(startButton);
+
+        _content.Controls.Add(CreateLabel("Windows 설정의 설치된 앱과 제어판의 프로그램 제거 목록에서 Tosun Flux를 제거할 수 있습니다.", new Point(36, 316), new Size(668, 48), 9.5f, FontStyle.Regular, Muted));
+
+        var closeButton = new Button { Location = new Point(36, 418), Size = new Size(321, 50) };
+        var launchButton = new Button { Location = new Point(383, 418), Size = new Size(321, 50) };
+        ConfigureButton(closeButton, "닫기", false);
+        ConfigureButton(launchButton, "Tosun Flux 실행", true);
+        closeButton.Click += (_, _) => Close();
+        launchButton.Click += (_, _) => LaunchInstalledApplication();
+        _content.Controls.Add(closeButton);
+        _content.Controls.Add(launchButton);
+    }
+
+    private void CreateDesktopShortcut(Button button)
+    {
+        try
         {
-            Dock = DockStyle.Bottom,
-            Height = 50,
-            ColumnCount = 2,
-            RowCount = 1
-        };
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        ConfigureButton(_closeButton, "닫기", false);
-        ConfigureButton(_launchButton, "Tosun Flux 실행", true);
-        _closeButton.Dock = DockStyle.Fill;
-        _launchButton.Dock = DockStyle.Fill;
-        _closeButton.Margin = new Padding(0, 0, 8, 0);
-        _launchButton.Margin = new Padding(8, 0, 0, 0);
-        _closeButton.Click -= CloseButtonClicked;
-        _closeButton.Click += CloseButtonClicked;
-        _launchButton.Click -= LaunchButtonClicked;
-        _launchButton.Click += LaunchButtonClicked;
-        actions.Controls.Add(_closeButton, 0, 0);
-        actions.Controls.Add(_launchButton, 1, 0);
-        _content.Controls.Add(actions);
+            InstallerOperations.CreateDesktopShortcut(_installedRoot);
+            button.Text = "바탕화면 바로가기 생성됨";
+            button.Enabled = false;
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(this, error.Message, Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
-    private void AddDesktopShortcutClicked(object? sender, EventArgs e)
+    private void CreateStartMenuShortcut(Button button)
     {
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Tosun Flux.lnk");
-        InstallerOperations.CreateApplicationShortcut(path, _selectedInstallRoot);
-        _desktopShortcutButton.Text = "바탕화면 바로가기 추가됨";
-        _desktopShortcutButton.Enabled = false;
+        try
+        {
+            InstallerOperations.CreateStartMenuShortcut(_installedRoot);
+            button.Text = "시작 메뉴 바로가기 생성됨";
+            button.Enabled = false;
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(this, error.Message, Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
-    private void AddStartMenuShortcutClicked(object? sender, EventArgs e)
+    private void LaunchInstalledApplication()
     {
-        InstallerOperations.CreateStartMenuShortcut(_selectedInstallRoot);
-        _startMenuShortcutButton.Text = "시작 메뉴 바로가기 추가됨";
-        _startMenuShortcutButton.Enabled = false;
+        try
+        {
+            InstallerOperations.LaunchApplication(_installedRoot);
+            Close();
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(this, error.Message, Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
-    private void LaunchButtonClicked(object? sender, EventArgs e)
-    {
-        InstallerOperations.LaunchApplication(_selectedInstallRoot);
-        Close();
-    }
-
-    private void CloseButtonClicked(object? sender, EventArgs e) => Close();
-
-    private static Label CreateLabel(string text, float size, FontStyle style, Color color, DockStyle dock = DockStyle.None, int height = 0)
+    private static Label CreateLabel(string text, Point location, Size size, float fontSize, FontStyle style, Color color)
     {
         return new Label
         {
             Text = text,
-            Font = new Font("Segoe UI", size, style),
+            Location = location,
+            Size = size,
+            Font = new Font("Segoe UI", fontSize, style),
             ForeColor = color,
-            Dock = dock,
-            Height = height,
-            AutoSize = false
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleLeft
         };
+    }
+
+    private static void ConfigureCheckBox(CheckBox checkBox, string text, Point location)
+    {
+        checkBox.Text = text;
+        checkBox.Location = location;
+        checkBox.Size = new Size(650, 26);
+        checkBox.Font = new Font("Segoe UI", 9.5f);
+        checkBox.ForeColor = Ink;
+        checkBox.UseVisualStyleBackColor = true;
     }
 
     private static void ConfigureButton(Button button, string text, bool primary)
@@ -334,90 +359,95 @@ internal sealed class InstallerForm : Form
         button.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = primary ? 0 : 1;
-        button.FlatAppearance.BorderColor = Color.FromArgb(214, 219, 233);
+        button.FlatAppearance.BorderColor = Color.FromArgb(211, 216, 231);
         button.BackColor = primary ? Accent : Color.White;
         button.ForeColor = primary ? Color.White : Ink;
         button.Cursor = Cursors.Hand;
         button.UseVisualStyleBackColor = false;
-        button.Padding = new Padding(8, 0, 8, 0);
-        button.MouseEnter += (_, _) => button.BackColor = primary ? AccentDark : Color.FromArgb(246, 247, 252);
+        button.MouseEnter += (_, _) => button.BackColor = primary ? AccentDark : Color.FromArgb(244, 246, 251);
         button.MouseLeave += (_, _) => button.BackColor = primary ? Accent : Color.White;
     }
 }
 
+internal readonly record struct InstallOptions(string InstallRoot, bool CreateDesktopShortcut, bool CreateStartMenuShortcut);
+internal readonly record struct InstallResult(bool DesktopShortcutCreated, bool StartMenuShortcutCreated);
 internal readonly record struct InstallProgress(int Percent, string Message);
 
 internal static class InstallerOperations
 {
-    public static void Install(string installRoot, IProgress<InstallProgress> progress)
+    private const string AppExeName = "Tosun Flux.exe";
+    private const string BackendRelativePath = @"backend\TosunConverter.Backend\TosunConverter.Backend.exe";
+
+    public static string GetInitialInstallRoot()
     {
+        using var key = Registry.LocalMachine.OpenSubKey(Program.UninstallKeyPath);
+        return key?.GetValue("InstallLocation") as string is { Length: > 0 } installedPath
+            ? installedPath
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Program.ProductName);
+    }
+
+    public static InstallResult Install(InstallOptions options, IProgress<InstallProgress> progress)
+    {
+        EnsureApplicationIsClosed(options.InstallRoot);
         var temporaryRoot = Path.Combine(Path.GetTempPath(), $"Tosun Flux Install {Guid.NewGuid():N}");
         Directory.CreateDirectory(temporaryRoot);
         try
         {
-            progress.Report(new InstallProgress(3, "설치 패키지를 확인하는 중..."));
-            using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip")
-                ?? throw new InvalidOperationException("설치 패키지 데이터를 찾을 수 없습니다.");
-            var archivePath = Path.Combine(temporaryRoot, "payload.zip");
-            using (var archive = File.Create(archivePath))
-                resource.CopyTo(archive);
+            var extractedRoot = ExtractPayload(temporaryRoot, progress);
+            CopyPayload(extractedRoot, options.InstallRoot, progress);
 
-            var extractedRoot = Path.Combine(temporaryRoot, "payload");
-            Directory.CreateDirectory(extractedRoot);
-            using var zip = ZipFile.OpenRead(archivePath);
-            for (var index = 0; index < zip.Entries.Count; index++)
+            var appPath = Path.Combine(options.InstallRoot, AppExeName);
+            var backendPath = Path.Combine(options.InstallRoot, BackendRelativePath);
+            var uninstaller = Path.Combine(options.InstallRoot, "Uninstall Tosun Flux.exe");
+            if (!File.Exists(appPath) || !File.Exists(backendPath))
+                throw new InvalidOperationException("설치된 앱 또는 변환 백엔드 파일을 찾을 수 없습니다.");
+
+            progress.Report(new InstallProgress(88, "변환 백엔드 연결을 확인하는 중..."));
+            VerifyBackend(backendPath);
+            File.Copy(Environment.ProcessPath!, uninstaller, true);
+
+            progress.Report(new InstallProgress(93, "Windows에 앱을 등록하는 중..."));
+            RegisterWindowsApp(options.InstallRoot, appPath, uninstaller);
+
+            var desktopCreated = false;
+            var startMenuCreated = false;
+            if (options.CreateDesktopShortcut)
             {
-                var entry = zip.Entries[index];
-                var destination = Path.GetFullPath(Path.Combine(extractedRoot, entry.FullName));
-                if (!destination.StartsWith(extractedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("설치 패키지 경로가 올바르지 않습니다.");
-                if (string.IsNullOrEmpty(entry.Name))
-                {
-                    Directory.CreateDirectory(destination);
-                }
-                else
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    entry.ExtractToFile(destination, true);
-                }
-                progress.Report(new InstallProgress(5 + (index + 1) * 50 / Math.Max(zip.Entries.Count, 1), "설치 파일을 준비하는 중..."));
+                CreateDesktopShortcut(options.InstallRoot);
+                desktopCreated = true;
+            }
+            if (options.CreateStartMenuShortcut)
+            {
+                CreateStartMenuShortcut(options.InstallRoot);
+                startMenuCreated = true;
             }
 
-            if (!File.Exists(Path.Combine(extractedRoot, "Tosun Flux.exe")))
-                throw new InvalidOperationException("Tosun Flux 실행 파일을 설치 패키지에서 찾을 수 없습니다.");
-
-            var files = Directory.EnumerateFiles(extractedRoot, "*", SearchOption.AllDirectories).ToArray();
-            Directory.CreateDirectory(installRoot);
-            for (var index = 0; index < files.Length; index++)
-            {
-                var relative = Path.GetRelativePath(extractedRoot, files[index]);
-                var destination = Path.Combine(installRoot, relative);
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                File.Copy(files[index], destination, true);
-                progress.Report(new InstallProgress(55 + (index + 1) * 32 / Math.Max(files.Length, 1), "프로그램 파일을 설치하는 중..."));
-            }
-
-            var uninstaller = Path.Combine(installRoot, "Uninstall Tosun Flux.exe");
-            if (!string.Equals(Path.GetFullPath(Environment.ProcessPath!), Path.GetFullPath(uninstaller), StringComparison.OrdinalIgnoreCase))
-                File.Copy(Environment.ProcessPath!, uninstaller, true);
-            RegisterUninstaller(installRoot, uninstaller);
             progress.Report(new InstallProgress(100, "설치가 완료되었습니다."));
+            return new InstallResult(desktopCreated, startMenuCreated);
         }
         finally
         {
-            if (Directory.Exists(temporaryRoot))
-                Directory.Delete(temporaryRoot, true);
+            try
+            {
+                if (Directory.Exists(temporaryRoot))
+                    Directory.Delete(temporaryRoot, true);
+            }
+            catch
+            {
+                // 임시 폴더 정리 실패가 완료된 설치를 되돌리지는 않습니다.
+            }
         }
     }
 
-    public static void CreateApplicationShortcut(string shortcutPath, string installRoot)
+    public static void CreateDesktopShortcut(string installRoot)
     {
-        CreateShortcut(shortcutPath, Path.Combine(installRoot, "Tosun Flux.exe"), "Tosun Flux 파일 통합 변환기");
+        var desktop = GetDesktopDirectory();
+        CreateApplicationShortcut(Path.Combine(desktop, "Tosun Flux.lnk"), installRoot);
     }
 
     public static void CreateStartMenuShortcut(string installRoot)
     {
-        var startMenu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs", Program.ProductName);
+        var startMenu = GetStartMenuFolder();
         Directory.CreateDirectory(startMenu);
         CreateApplicationShortcut(Path.Combine(startMenu, "Tosun Flux.lnk"), installRoot);
         CreateShortcut(Path.Combine(startMenu, "Tosun Flux 제거.lnk"), Path.Combine(installRoot, "Uninstall Tosun Flux.exe"), "Tosun Flux 제거", "--uninstall");
@@ -425,49 +455,168 @@ internal static class InstallerOperations
 
     public static void LaunchApplication(string installRoot)
     {
-        Process.Start(new ProcessStartInfo(Path.Combine(installRoot, "Tosun Flux.exe"))
-        {
-            WorkingDirectory = installRoot,
-            UseShellExecute = true
-        });
+        var appPath = Path.Combine(installRoot, AppExeName);
+        var backendPath = Path.Combine(installRoot, BackendRelativePath);
+        if (!File.Exists(appPath) || !File.Exists(backendPath))
+            throw new InvalidOperationException("설치된 앱과 변환 백엔드를 찾을 수 없습니다.");
+        VerifyBackend(backendPath);
+        Process.Start(new ProcessStartInfo(appPath) { WorkingDirectory = installRoot, UseShellExecute = true });
     }
 
     public static void Uninstall()
     {
-        var installRoot = Path.GetDirectoryName(Environment.ProcessPath!)!;
-        var desktopShortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Tosun Flux.lnk");
-        if (File.Exists(desktopShortcut))
-            File.Delete(desktopShortcut);
+        if (MessageBox.Show("Tosun Flux와 설치된 구성 요소를 제거할까요?", "Tosun Flux 제거", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            return;
 
-        var startMenu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs", Program.ProductName);
+        var installRoot = Path.GetDirectoryName(Environment.ProcessPath!)!;
+        DeleteFile(Path.Combine(GetDesktopDirectory(), "Tosun Flux.lnk"));
+        var startMenu = GetStartMenuFolder();
         if (Directory.Exists(startMenu))
             Directory.Delete(startMenu, true);
-
         Registry.LocalMachine.DeleteSubKeyTree(Program.UninstallKeyPath, false);
-        var script = $"timeout /t 2 /nobreak >nul & rmdir /s /q \"{installRoot}\"";
-        Process.Start(new ProcessStartInfo("cmd.exe", $"/c {script}")
+        Registry.LocalMachine.DeleteSubKeyTree(Program.AppPathKeyPath, false);
+
+        Process.Start(new ProcessStartInfo("cmd.exe", $"/c timeout /t 2 /nobreak >nul & rmdir /s /q \"{installRoot}\"")
         {
             CreateNoWindow = true,
             UseShellExecute = false,
             WindowStyle = ProcessWindowStyle.Hidden
         });
+        MessageBox.Show("Tosun Flux 제거를 완료했습니다.", "Tosun Flux 제거", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
-    private static void RegisterUninstaller(string installRoot, string uninstaller)
+    private static string GetDesktopDirectory()
     {
-        using var key = Registry.LocalMachine.CreateSubKey(Program.UninstallKeyPath);
-        if (key is null)
-            throw new InvalidOperationException("Windows 프로그램 설치 및 제거 목록에 등록할 수 없습니다.");
-        key.SetValue("DisplayName", Program.ProductName);
-        key.SetValue("DisplayVersion", Program.ProductVersion);
-        key.SetValue("Publisher", Program.Publisher);
-        key.SetValue("InstallLocation", installRoot);
-        key.SetValue("UninstallString", $"\"{uninstaller}\" --uninstall");
-        key.SetValue("QuietUninstallString", $"\"{uninstaller}\" --uninstall");
-        key.SetValue("DisplayIcon", uninstaller);
-        key.SetValue("NoModify", 1, RegistryValueKind.DWord);
-        key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
-        key.SetValue("EstimatedSize", EstimateInstallSize(installRoot), RegistryValueKind.DWord);
+        using var key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders");
+        var redirectedDesktop = key?.GetValue("Desktop") as string;
+        if (!string.IsNullOrWhiteSpace(redirectedDesktop))
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(redirectedDesktop);
+            Directory.CreateDirectory(expanded);
+            return expanded;
+        }
+
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        Directory.CreateDirectory(desktop);
+        return desktop;
+    }
+
+    private static string ExtractPayload(string temporaryRoot, IProgress<InstallProgress> progress)
+    {
+        progress.Report(new InstallProgress(3, "설치 패키지를 확인하는 중..."));
+        using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip")
+            ?? throw new InvalidOperationException("설치 패키지 데이터를 찾을 수 없습니다.");
+        var archivePath = Path.Combine(temporaryRoot, "payload.zip");
+        using (var archive = File.Create(archivePath))
+            resource.CopyTo(archive);
+
+        var extractedRoot = Path.Combine(temporaryRoot, "payload");
+        Directory.CreateDirectory(extractedRoot);
+        using var zip = ZipFile.OpenRead(archivePath);
+        for (var index = 0; index < zip.Entries.Count; index++)
+        {
+            var entry = zip.Entries[index];
+            var destination = Path.GetFullPath(Path.Combine(extractedRoot, entry.FullName));
+            if (!destination.StartsWith(extractedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("설치 패키지 경로가 올바르지 않습니다.");
+            if (string.IsNullOrEmpty(entry.Name))
+                Directory.CreateDirectory(destination);
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                entry.ExtractToFile(destination, true);
+            }
+            progress.Report(new InstallProgress(5 + (index + 1) * 48 / Math.Max(zip.Entries.Count, 1), "설치 파일을 준비하는 중..."));
+        }
+        return extractedRoot;
+    }
+
+    private static void CopyPayload(string sourceRoot, string installRoot, IProgress<InstallProgress> progress)
+    {
+        var files = Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories).ToArray();
+        Directory.CreateDirectory(installRoot);
+        for (var index = 0; index < files.Length; index++)
+        {
+            var relative = Path.GetRelativePath(sourceRoot, files[index]);
+            var destination = Path.Combine(installRoot, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(files[index], destination, true);
+            progress.Report(new InstallProgress(53 + (index + 1) * 33 / Math.Max(files.Length, 1), "프로그램 파일을 설치하는 중..."));
+        }
+    }
+
+    private static void VerifyBackend(string backendPath)
+    {
+        var startInfo = new ProcessStartInfo(backendPath)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            WorkingDirectory = Path.GetDirectoryName(backendPath)!
+        };
+        startInfo.ArgumentList.Add("health");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("변환 백엔드를 실행할 수 없습니다.");
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(15000))
+        {
+            process.Kill(true);
+            throw new InvalidOperationException("변환 백엔드 응답 시간이 초과되었습니다.");
+        }
+
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(error.Trim().Length > 0 ? error.Trim() : "변환 백엔드 상태 확인에 실패했습니다.");
+        using var document = JsonDocument.Parse(output);
+        if (document.RootElement.GetProperty("status").GetString() != "ok")
+            throw new InvalidOperationException("변환 백엔드가 정상 상태를 반환하지 않았습니다.");
+    }
+
+    private static void EnsureApplicationIsClosed(string installRoot)
+    {
+        var appPath = Path.Combine(installRoot, AppExeName);
+        foreach (var process in Process.GetProcessesByName("Tosun Flux"))
+        {
+            try
+            {
+                if (string.Equals(process.MainModule?.FileName, appPath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("실행 중인 Tosun Flux를 종료한 뒤 다시 설치해 주세요.");
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+    }
+
+    private static void RegisterWindowsApp(string installRoot, string appPath, string uninstaller)
+    {
+        using (var key = Registry.LocalMachine.CreateSubKey(Program.UninstallKeyPath))
+        {
+            if (key is null)
+                throw new InvalidOperationException("Windows 프로그램 목록에 등록할 수 없습니다.");
+            key.SetValue("DisplayName", Program.ProductName);
+            key.SetValue("DisplayVersion", Program.ProductVersion);
+            key.SetValue("Publisher", Program.Publisher);
+            key.SetValue("InstallLocation", installRoot);
+            key.SetValue("InstallSource", Path.GetDirectoryName(Environment.ProcessPath!) ?? string.Empty);
+            key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
+            key.SetValue("UninstallString", $"\"{uninstaller}\" --uninstall");
+            key.SetValue("QuietUninstallString", $"\"{uninstaller}\" --uninstall");
+            key.SetValue("DisplayIcon", $"{appPath},0");
+            key.SetValue("URLInfoAbout", "https://github.com/Tosun0/Tosun-Flux");
+            key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+            key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+            key.SetValue("EstimatedSize", EstimateInstallSize(installRoot), RegistryValueKind.DWord);
+        }
+
+        using var appPathKey = Registry.LocalMachine.CreateSubKey(Program.AppPathKeyPath);
+        if (appPathKey is null)
+            throw new InvalidOperationException("Windows 앱 경로에 등록할 수 없습니다.");
+        appPathKey.SetValue(string.Empty, appPath);
+        appPathKey.SetValue("Path", installRoot);
     }
 
     private static int EstimateInstallSize(string installRoot)
@@ -478,19 +627,46 @@ internal static class InstallerOperations
         return (int)Math.Clamp(bytes / 1024, 1, int.MaxValue);
     }
 
+    private static string GetStartMenuFolder()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs", Program.ProductName);
+    }
+
+    private static void CreateApplicationShortcut(string shortcutPath, string installRoot)
+    {
+        CreateShortcut(shortcutPath, Path.Combine(installRoot, AppExeName), "Tosun Flux 파일 통합 변환기");
+    }
+
     private static void CreateShortcut(string path, string target, string description, string? arguments = null)
     {
         var shellType = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("Windows 바로가기 기능을 사용할 수 없습니다.");
-        dynamic shell = Activator.CreateInstance(shellType)!;
-        dynamic shortcut = shell.CreateShortcut(path);
-        shortcut.TargetPath = target;
-        shortcut.WorkingDirectory = Path.GetDirectoryName(target);
-        shortcut.IconLocation = $"{target},0";
-        shortcut.Description = description;
-        if (arguments is not null)
-            shortcut.Arguments = arguments;
-        shortcut.Save();
-        Marshal.FinalReleaseComObject(shortcut);
-        Marshal.FinalReleaseComObject(shell);
+        dynamic? shell = null;
+        dynamic? shortcut = null;
+        try
+        {
+            shell = Activator.CreateInstance(shellType)!;
+            shortcut = shell.CreateShortcut(path);
+            shortcut.TargetPath = target;
+            shortcut.WorkingDirectory = Path.GetDirectoryName(target);
+            shortcut.IconLocation = $"{Path.Combine(Path.GetDirectoryName(target)!, AppExeName)},0";
+            shortcut.Description = description;
+            shortcut.WindowStyle = 1;
+            if (arguments is not null)
+                shortcut.Arguments = arguments;
+            shortcut.Save();
+        }
+        finally
+        {
+            if (shortcut is not null)
+                Marshal.FinalReleaseComObject(shortcut);
+            if (shell is not null)
+                Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    private static void DeleteFile(string path)
+    {
+        if (File.Exists(path))
+            File.Delete(path);
     }
 }

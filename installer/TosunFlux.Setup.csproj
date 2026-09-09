@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Tosun Flux Setup</AssemblyName>
@@ -10,7 +11,8 @@
     <Authors>Tosun</Authors>
     <Product>Tosun Flux</Product>
     <Description>Tosun Flux 설치 프로그램</Description>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
+    <InformationalVersion>0.4.0</InformationalVersion>
     <ApplicationIcon>..\assets\Tosun.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishSingleFile>true</PublishSingleFile>

@@ -44,6 +44,8 @@ class ConversionOptions:
     resolution: str = "source"
     aspect: str = "source"
     fit: str = "fit"
+    width: int | None = None
+    height: int | None = None
 
 
 RESOLUTIONS = {
@@ -145,6 +147,8 @@ def _read_text(path: Path) -> str:
 
 
 def target_dimensions(source_size: tuple[int, int], options: ConversionOptions) -> tuple[int, int] | None:
+    if options.width is not None and options.height is not None:
+        return options.width, options.height
     if options.resolution == "source" and options.aspect == "source":
         return None
 
@@ -274,7 +278,7 @@ def _convert_pdf(source: Path, output_dir: Path, target: str, options: Conversio
     outputs = tuple(sorted(output_dir.glob(f"{output_stem.name}-*.{target}")))
     if not outputs:
         raise ConversionError("PDF 페이지 이미지를 만들지 못했습니다.")
-    if options.aspect != "source":
+    if options.aspect != "source" or (options.width is not None and options.height is not None):
         for output in outputs:
             with Image.open(output) as page:
                 transformed = _apply_image_geometry(page, target, options)
@@ -289,7 +293,7 @@ def _video_filter(options: ConversionOptions) -> str | None:
     size = target_dimensions((1920, 1080), options)
     if size is None:
         return None
-    width, height = size
+    width, height = (max(2, value // 2 * 2) for value in size)
     if options.fit == "stretch":
         return f"scale={width}:{height}:flags=lanczos"
     if options.fit == "fill":

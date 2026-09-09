@@ -6,9 +6,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Tosun Flux</AssemblyName>
+    <Company>Tosun</Company>
+    <Authors>Tosun</Authors>
+    <Product>Tosun Flux</Product>
+    <Description>토순의 파일 컨버터</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\assets\Tosun.ico</ApplicationIcon>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
+    <InformationalVersion>0.4.0</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="..\assets\tosun-floating-v1.png" Link="Assets\tosun-floating-v1.png" />

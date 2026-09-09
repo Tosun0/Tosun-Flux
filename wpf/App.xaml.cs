@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
 using Microsoft.Win32;
@@ -8,6 +9,7 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        SetCurrentProcessExplicitAppUserModelID("Tosun.TosunFlux");
         ApplyColorProfile(IsSystemDarkMode());
         base.OnStartup(e);
     }
@@ -72,4 +74,7 @@ public partial class App : Application
 
         return personalize?.GetValue("SystemUsesLightTheme") is int systemTheme && systemTheme == 0;
     }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 }

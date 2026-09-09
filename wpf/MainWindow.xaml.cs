@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
@@ -16,6 +17,7 @@ public partial class MainWindow : Window
     private const string SettingsKeyPath = @"Software\Tosun\Tosun Flux";
     private const string OutputPathValueName = "OutputPath";
     private readonly List<string> _files = [];
+    private UpdateInfo? _availableUpdate;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",
@@ -26,13 +28,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         OptimizationBox.ItemsSource = new[] { "원본 유지", "품질 우선", "균형", "용량 우선" };
-        ResolutionBox.ItemsSource = new[] { "원본", "4K", "QHD", "FHD", "HD" };
+        ResolutionBox.ItemsSource = new[] { "원본", "4K", "QHD", "FHD", "HD", "직접 지정" };
         AspectBox.ItemsSource = new[] { "원본", "16:9", "9:16", "1:1", "4:3", "3:4" };
         OptimizationBox.SelectedIndex = 0;
         ResolutionBox.SelectedIndex = 0;
         AspectBox.SelectedIndex = 0;
         OutputPath.Text = LoadOutputPath();
         Closed += (_, _) => SaveOutputPath();
+        Loaded += MainWindow_Loaded;
         SourceInitialized += (_, _) => EnableAcrylic();
         UpdateVisualSettings();
     }
@@ -140,15 +143,19 @@ public partial class MainWindow : Window
 
     private void TargetBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
 
+    private void ResolutionBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
+
     private void UpdateVisualSettings()
     {
         if (!IsInitialized)
             return;
         var supportsVisualOptions = _files.Count > 0 && _files.All(path => VisualExtensions.Contains(Path.GetExtension(path)));
         var pdfCompressionOnly = TargetBox.SelectedItem is string target && target.Equals(".pdf", StringComparison.OrdinalIgnoreCase);
+        var customResolution = ResolutionBox.SelectedIndex == 5;
         OptimizationBox.IsEnabled = supportsVisualOptions;
         ResolutionBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
-        AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
+        AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution;
+        CustomSizePanel.Visibility = supportsVisualOptions && !pdfCompressionOnly && customResolution ? Visibility.Visible : Visibility.Collapsed;
         FitChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         FillChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         StretchChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
@@ -184,15 +191,29 @@ public partial class MainWindow : Window
             return;
         }
 
-        var startInfo = BackendStartInfo("targets");
-        foreach (var file in _files)
-            startInfo.ArgumentList.Add(file);
-        using var process = Process.Start(startInfo)!;
-        var output = await process.StandardOutput.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        using var document = JsonDocument.Parse(output.Trim());
-        foreach (var target in document.RootElement.GetProperty("targets").EnumerateArray())
-            TargetBox.Items.Add($".{target.GetString()}");
+        try
+        {
+            var startInfo = BackendStartInfo("targets");
+            foreach (var file in _files)
+                startInfo.ArgumentList.Add(file);
+            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("변환 백엔드를 실행할 수 없습니다.");
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = await outputTask;
+            if (process.ExitCode != 0)
+                throw new InvalidOperationException((await errorTask).Trim());
+            using var document = JsonDocument.Parse(output.Trim());
+            foreach (var target in document.RootElement.GetProperty("targets").EnumerateArray())
+                TargetBox.Items.Add($".{target.GetString()}");
+        }
+        catch (Exception error)
+        {
+            FileHint.Text = "변환 백엔드에 연결하지 못했습니다.";
+            StatusText.Text = "백엔드 연결 실패";
+            AppendLog(error.Message);
+            return;
+        }
 
         if (TargetBox.Items.Count > 0)
         {
@@ -213,6 +234,8 @@ public partial class MainWindow : Window
     {
         if (_files.Count == 0 || TargetBox.SelectedItem is not string selectedTarget)
             return;
+        if (!TryGetCustomDimensions(out var customWidth, out var customHeight))
+            return;
 
         SaveOutputPath();
         ConvertButton.IsEnabled = false;
@@ -229,17 +252,25 @@ public partial class MainWindow : Window
         startInfo.ArgumentList.Add("--optimize");
         startInfo.ArgumentList.Add(new[] { "source", "quality", "balanced", "small" }[Math.Max(0, OptimizationBox.SelectedIndex)]);
         startInfo.ArgumentList.Add("--resolution");
-        startInfo.ArgumentList.Add(new[] { "source", "4k", "qhd", "fhd", "hd" }[Math.Max(0, ResolutionBox.SelectedIndex)]);
+        startInfo.ArgumentList.Add(new[] { "source", "4k", "qhd", "fhd", "hd", "source" }[Math.Max(0, ResolutionBox.SelectedIndex)]);
         startInfo.ArgumentList.Add("--aspect");
-        startInfo.ArgumentList.Add(new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Max(0, AspectBox.SelectedIndex)]);
+        startInfo.ArgumentList.Add(ResolutionBox.SelectedIndex == 5 ? "source" : new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Max(0, AspectBox.SelectedIndex)]);
         startInfo.ArgumentList.Add("--fit");
         startInfo.ArgumentList.Add(FillChoice.IsChecked == true ? "fill" : StretchChoice.IsChecked == true ? "stretch" : "fit");
+        if (customWidth is not null && customHeight is not null)
+        {
+            startInfo.ArgumentList.Add("--width");
+            startInfo.ArgumentList.Add(customWidth.Value.ToString());
+            startInfo.ArgumentList.Add("--height");
+            startInfo.ArgumentList.Add(customHeight.Value.ToString());
+        }
         foreach (var file in _files)
             startInfo.ArgumentList.Add(file);
 
         try
         {
-            using var process = Process.Start(startInfo)!;
+            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("변환 백엔드를 실행할 수 없습니다.");
+            var errorTask = process.StandardError.ReadToEndAsync();
             var success = 0;
             while (await process.StandardOutput.ReadLineAsync() is { } line)
             {
@@ -266,7 +297,17 @@ public partial class MainWindow : Window
                 }
             }
             await process.WaitForExitAsync();
-            StatusText.Text = $"변환 완료 · {success}/{_files.Count}개";
+            var backendError = (await errorTask).Trim();
+            if (process.ExitCode != 0)
+            {
+                StatusText.Text = $"변환 실패 · {success}/{_files.Count}개";
+                if (backendError.Length > 0)
+                    AppendLog(backendError);
+            }
+            else
+            {
+                StatusText.Text = $"변환 완료 · {success}/{_files.Count}개";
+            }
         }
         catch (Exception error)
         {
@@ -296,6 +337,109 @@ public partial class MainWindow : Window
     {
         LogText.AppendText(text + Environment.NewLine);
         LogText.ScrollToEnd();
+    }
+
+    private bool TryGetCustomDimensions(out int? width, out int? height)
+    {
+        width = null;
+        height = null;
+        if (ResolutionBox.SelectedIndex != 5)
+            return true;
+
+        if (int.TryParse(CustomWidthBox.Text, out var parsedWidth) &&
+            int.TryParse(CustomHeightBox.Text, out var parsedHeight) &&
+            parsedWidth is >= 2 and <= 16384 && parsedHeight is >= 2 and <= 16384)
+        {
+            width = parsedWidth;
+            height = parsedHeight;
+            return true;
+        }
+
+        MessageBox.Show(this, "직접 해상도는 가로·세로 모두 2~16384 픽셀로 입력해 주세요.", "Tosun Flux", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return false;
+    }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        await VerifyBackendAsync();
+        await CheckForUpdatesAsync();
+    }
+
+    private async Task VerifyBackendAsync()
+    {
+        if (!File.Exists(BackendPath))
+        {
+            StatusText.Text = "변환 백엔드를 찾을 수 없습니다.";
+            return;
+        }
+
+        try
+        {
+            using var process = Process.Start(BackendStartInfo("health")) ?? throw new InvalidOperationException();
+            var output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            using var document = JsonDocument.Parse(output);
+            if (process.ExitCode != 0 || document.RootElement.GetProperty("status").GetString() != "ok")
+                throw new InvalidOperationException();
+            StatusText.Text = "준비되었습니다.";
+        }
+        catch
+        {
+            StatusText.Text = "변환 백엔드 연결에 실패했습니다.";
+        }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+            _availableUpdate = await UpdateService.CheckAsync(currentVersion);
+            if (_availableUpdate is not null)
+            {
+                UpdateButton.Content = $"v{_availableUpdate.Version} 업데이트";
+                UpdateButton.Visibility = Visibility.Visible;
+            }
+        }
+        catch
+        {
+            // 네트워크가 없어도 로컬 변환은 계속 사용할 수 있습니다.
+        }
+    }
+
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_availableUpdate is null)
+            return;
+        if (MessageBox.Show(this, $"Tosun Flux v{_availableUpdate.Version}을 다운로드하고 설치할까요?", "업데이트", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes)
+            return;
+
+        UpdateButton.IsEnabled = false;
+        Progress.Maximum = 100;
+        Progress.Value = 0;
+        var progress = new Progress<int>(value =>
+        {
+            Progress.Value = value;
+            StatusText.Text = $"업데이트 다운로드 중… {value}%";
+        });
+
+        try
+        {
+            var installerPath = await UpdateService.DownloadAsync(_availableUpdate, progress);
+            var installer = new ProcessStartInfo(installerPath)
+            {
+                UseShellExecute = true,
+                Arguments = $"--wait-for-pid {Environment.ProcessId}"
+            };
+            Process.Start(installer);
+            Application.Current.Shutdown();
+        }
+        catch (Exception error)
+        {
+            UpdateButton.IsEnabled = true;
+            StatusText.Text = "업데이트를 설치하지 못했습니다.";
+            MessageBox.Show(this, error.Message, "업데이트", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private static string LoadOutputPath()

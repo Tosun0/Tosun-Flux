@@ -23,6 +23,10 @@ class ConverterTests(unittest.TestCase):
         options = ConversionOptions(resolution="fhd", aspect="9:16")
         self.assertEqual(target_dimensions((4000, 3000), options), (1080, 1920))
 
+    def test_custom_dimensions_override_presets(self) -> None:
+        options = ConversionOptions(resolution="fhd", aspect="16:9", width=1440, height=1080)
+        self.assertEqual(target_dimensions((4000, 3000), options), (1440, 1080))
+
     def test_image_optimization_and_resize(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

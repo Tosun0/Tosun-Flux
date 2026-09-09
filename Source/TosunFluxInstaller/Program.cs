@@ -10,8 +10,8 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.1";
-    internal const string Publisher = "Tosun";
+    internal const string ProductVersion = "1.0.2";
+    internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
 
@@ -92,8 +92,8 @@ internal sealed class InstallerForm : Form
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
 
         BuildShell();
-        if (InstallerOperations.TryGetInstalledRoot(out var installedRoot))
-            ShowMaintenancePage(installedRoot);
+        if (InstallerOperations.TryGetInstalledRoot(out var installedRoot, out var installedVersion))
+            ShowMaintenancePage(installedRoot, installedVersion);
         else
             ShowInstallPage();
     }
@@ -184,27 +184,39 @@ internal sealed class InstallerForm : Form
         _content.Controls.Add(_installButton);
     }
 
-    private void ShowMaintenancePage(string installedRoot)
+    private void ShowMaintenancePage(string installedRoot, Version installedVersion)
     {
         _installedRoot = installedRoot;
-        Text = $"{Program.ProductName} 유지 관리";
+        var targetVersion = Version.Parse(Program.ProductVersion);
+        var requiresUpdate = installedVersion != targetVersion;
+        Text = requiresUpdate ? $"{Program.ProductName} 업데이트" : $"{Program.ProductName} 유지 관리";
         _content.Controls.Clear();
 
-        _content.Controls.Add(CreateLabel("이미 설치되어 있습니다", new Point(36, 22), new Size(668, 34), 17, FontStyle.Bold, Ink));
-        _content.Controls.Add(CreateLabel("Tosun Flux의 유지 관리 작업을 선택하세요.", new Point(36, 61), new Size(668, 24), 10, FontStyle.Regular, Muted));
+        _content.Controls.Add(CreateLabel(
+            requiresUpdate ? "업데이트할 수 있습니다" : "이미 최신 버전입니다",
+            new Point(36, 22), new Size(668, 34), 17, FontStyle.Bold, Ink));
+        _content.Controls.Add(CreateLabel(
+            requiresUpdate
+                ? $"Tosun Flux v{installedVersion}에서 v{targetVersion}으로 업데이트합니다."
+                : "같은 버전을 다시 적용하거나 프로그램을 제거할 수 있습니다.",
+            new Point(36, 61), new Size(668, 24), 10, FontStyle.Regular, Muted));
 
         var installed = new Panel { Location = new Point(36, 112), Size = new Size(668, 76), BackColor = Surface };
-        installed.Controls.Add(CreateLabel("현재 설치 위치", new Point(16, 11), new Size(636, 20), 9, FontStyle.Bold, Muted));
+        installed.Controls.Add(CreateLabel($"현재 설치 위치  ·  v{installedVersion}", new Point(16, 11), new Size(636, 20), 9, FontStyle.Bold, Muted));
         installed.Controls.Add(CreateLabel(installedRoot, new Point(16, 36), new Size(636, 24), 10, FontStyle.Regular, Ink));
         _content.Controls.Add(installed);
 
         var notice = new Panel { Location = new Point(36, 215), Size = new Size(668, 76), BackColor = Surface };
-        notice.Controls.Add(CreateLabel("업데이트/복구는 현재 설치 위치에 최신 파일을 다시 적용합니다.", new Point(16, 13), new Size(636, 22), 9.5f, FontStyle.Bold, Ink));
+        notice.Controls.Add(CreateLabel(
+            requiresUpdate
+                ? $"새 버전 v{targetVersion}을 현재 설치 위치에 적용합니다."
+                : $"v{targetVersion} 파일을 현재 설치 위치에 다시 적용해 복구합니다.",
+            new Point(16, 13), new Size(636, 22), 9.5f, FontStyle.Bold, Ink));
         notice.Controls.Add(CreateLabel("제거는 Windows의 설치된 앱 목록에서 실행하는 것과 같은 경로를 사용합니다.", new Point(16, 40), new Size(636, 20), 9, FontStyle.Regular, Muted));
         _content.Controls.Add(notice);
 
         var repairButton = new Button { Location = new Point(36, 324), Size = new Size(668, 48) };
-        ConfigureButton(repairButton, "업데이트 / 복구", true);
+        ConfigureButton(repairButton, requiresUpdate ? "업데이트" : "복구", true);
         repairButton.Click += RepairButtonClicked;
         _content.Controls.Add(repairButton);
 
@@ -434,8 +446,17 @@ internal static class InstallerOperations
 
     public static bool TryGetInstalledRoot(out string installRoot)
     {
+        return TryGetInstalledRoot(out installRoot, out _);
+    }
+
+    public static bool TryGetInstalledRoot(out string installRoot, out Version installedVersion)
+    {
         using var key = Registry.LocalMachine.OpenSubKey(Program.UninstallKeyPath);
         installRoot = key?.GetValue("InstallLocation") as string ?? string.Empty;
+        var versionText = key?.GetValue("DisplayVersion") as string;
+        installedVersion = Version.TryParse(versionText, out var parsedVersion)
+            ? parsedVersion
+            : new Version(0, 0, 0);
         return installRoot.Length > 0;
     }
     public static string GetInitialInstallRoot()

@@ -23,7 +23,7 @@ public partial class MainWindow : Window
     private bool _allowClose;
     private bool _customResolutionExpanded;
     private double _heightBeforeCustomResolution;
-    private const double CustomResolutionWindowHeight = 960;
+    private const double CustomResolutionWindowHeight = 1020;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",

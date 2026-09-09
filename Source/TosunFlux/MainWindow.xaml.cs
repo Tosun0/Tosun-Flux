@@ -252,6 +252,7 @@ public partial class MainWindow : Window
         ResolutionBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution;
         FrameRateBox.IsEnabled = supportsVideoOptions && !pdfCompressionOnly;
+        UpdateFrameRateVisibility(supportsVideoOptions && !pdfCompressionOnly);
         var showCustomResolution = supportsVisualOptions && !pdfCompressionOnly;
         CustomSizePanel.Visibility = showCustomResolution ? Visibility.Visible : Visibility.Collapsed;
         FitChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
@@ -267,6 +268,19 @@ public partial class MainWindow : Window
             : "영상의 출력 프레임을 선택합니다.";
         UpdateCustomSizePreview();
         UpdateEstimatedSize();
+    }
+
+    private void UpdateFrameRateVisibility(bool visible)
+    {
+        var visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        FrameRateLabel.Visibility = visibility;
+        FrameRatePanel.Visibility = visibility;
+        var separatorWidth = visible ? new GridLength(8) : new GridLength(0);
+        var frameRateWidth = visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        OutputLabelsGrid.ColumnDefinitions[3].Width = separatorWidth;
+        OutputLabelsGrid.ColumnDefinitions[4].Width = frameRateWidth;
+        OutputControlsGrid.ColumnDefinitions[3].Width = separatorWidth;
+        OutputControlsGrid.ColumnDefinitions[4].Width = frameRateWidth;
     }
 
     private void UpdateCustomSizePreview()
@@ -344,6 +358,7 @@ public partial class MainWindow : Window
     {
         if (!IsInitialized || _files.Count == 0 || TargetBox.SelectedItem is not TargetChoice target)
         {
+            OriginalSizeText.Text = string.Empty;
             EstimatedSizeText.Text = "예상 용량은 파일을 추가하면 표시됩니다.";
             return;
         }
@@ -351,6 +366,7 @@ public partial class MainWindow : Window
         try
         {
             var sourceBytes = _files.Sum(path => new FileInfo(path).Length);
+            OriginalSizeText.Text = $"원본 용량 · {FormatBytes(sourceBytes)}";
             var multiplier = target.Key switch
             {
                 "png" => 0.95,
@@ -362,7 +378,7 @@ public partial class MainWindow : Window
                 "pdf" => 0.8,
                 "png-sequence" => 2.8,
                 "jpg-sequence" => 0.7,
-                "mp4" => 0.75,
+                "mp4" => 1.0,
                 "webm" => 0.6,
                 "mov" => 0.95,
                 "mkv" => 0.85,
@@ -389,11 +405,18 @@ public partial class MainWindow : Window
             if (isVideoTarget && double.TryParse(_sourceFrameRate, out var sourceFrameRate) && sourceFrameRate > 0 && FrameRateBox.SelectedIndex > 0 && double.TryParse(FrameRateBox.SelectedItem?.ToString(), out var outputFrameRate))
                 multiplier *= outputFrameRate / sourceFrameRate;
 
-            var estimate = Math.Max(1024, sourceBytes * Math.Max(0.05, multiplier));
+            var isUnchangedMp4 = target.Key == "mp4" &&
+                OptimizationBox.SelectedIndex == 0 &&
+                ResolutionBox.SelectedIndex == 0 &&
+                AspectBox.SelectedIndex == 0 &&
+                FrameRateBox.SelectedIndex == 0 &&
+                _files.All(path => Path.GetExtension(path).Equals(".mp4", StringComparison.OrdinalIgnoreCase));
+            var estimate = isUnchangedMp4 ? sourceBytes : Math.Max(1024, sourceBytes * Math.Max(0.05, multiplier));
             EstimatedSizeText.Text = $"예상 용량 · 약 {FormatBytes(estimate)}";
         }
         catch (IOException)
         {
+            OriginalSizeText.Text = "원본 용량을 읽지 못했습니다.";
             EstimatedSizeText.Text = "예상 용량을 계산하지 못했습니다.";
         }
     }

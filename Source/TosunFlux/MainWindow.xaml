@@ -219,7 +219,7 @@
                     <Button x:Name="UpdateButton" Visibility="Collapsed" Content="업데이트" Padding="14,9" Margin="8,0,12,0" Click="UpdateButton_Click" />
                 </StackPanel>
                 <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.6." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
+                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.7." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
             </Grid>
 
             <Grid Grid.Row="2">
@@ -281,17 +281,17 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Text="변환 설정" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-                        <Grid Grid.Row="2">
+                        <Grid x:Name="OutputLabelsGrid" Grid.Row="2">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <TextBlock Text="출력 형식" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                             <TextBlock Grid.Column="2" Text="최적화" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
-                            <TextBlock Grid.Column="4" Text="프레임 변환" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock x:Name="FrameRateLabel" Grid.Column="4" Text="프레임 변환" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                         </Grid>
-                        <Grid Grid.Row="4">
+                        <Grid x:Name="OutputControlsGrid" Grid.Row="4">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Border CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="TargetBox" MinHeight="42" SelectionChanged="TargetBox_SelectionChanged" /></Border>
                             <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="OptimizationBox" MinHeight="42" SelectionChanged="OptimizationBox_SelectionChanged" /></Border>
-                            <Border Grid.Column="4" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="FrameRateBox" MinHeight="42" SelectionChanged="FrameRateBox_SelectionChanged" /></Border>
+                            <Border x:Name="FrameRatePanel" Grid.Column="4" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="FrameRateBox" MinHeight="42" SelectionChanged="FrameRateBox_SelectionChanged" /></Border>
                         </Grid>
                         <Grid Grid.Row="6">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -325,6 +325,7 @@
                             <Button Grid.Column="1" Content="폴더 선택" Click="ChooseFolder_Click" Margin="8,0,0,0" />
                         </Grid>
                         <TextBlock x:Name="OptimizationHint" Grid.Row="17" Text="이미지 · 영상 · PDF에 적용됩니다." Margin="2,8,0,0" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock x:Name="OriginalSizeText" Grid.Row="18" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,2,8" FontSize="11" FontWeight="Light" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
                         <TextBlock x:Name="EstimatedSizeText" Grid.Row="18" Text="예상 용량은 파일을 추가하면 표시됩니다." HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="2,0,2,8" FontSize="11" FontWeight="Light" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="변환 방식에 따른 대략적인 예상치입니다." />
                         <Button x:Name="ConvertButton" Grid.Row="19" Content="변환 시작" Height="50" IsEnabled="False" Click="Convert_Click" />
                     </Grid>

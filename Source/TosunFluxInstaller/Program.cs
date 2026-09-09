@@ -10,7 +10,7 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.6";
+    internal const string ProductVersion = "1.0.7";
     internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";

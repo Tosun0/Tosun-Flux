@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from TosunFluxConverter import ConversionOptions, common_targets, convert_files
+from TosunFluxConverter import ConversionOptions, common_targets, convert_files, source_metadata
 
 
 def emit(payload: dict[str, object]) -> None:
@@ -29,16 +29,17 @@ def main() -> int:
     convert_parser.add_argument("--fit", choices=("fit", "fill", "stretch"), default="fit")
     convert_parser.add_argument("--width", type=int)
     convert_parser.add_argument("--height", type=int)
+    convert_parser.add_argument("--fps", choices=("source", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60"), default="source")
     convert_parser.add_argument("files", nargs="+")
 
     args = parser.parse_args()
     if args.command == "health":
-        emit({"status": "ok", "product": "Tosun Flux", "version": "1.0.4"})
+        emit({"status": "ok", "product": "Tosun Flux", "version": "1.0.5"})
         return 0
 
     files = [Path(item) for item in args.files]
     if args.command == "targets":
-        emit({"targets": list(common_targets(files))})
+        emit({"targets": list(common_targets(files)), "metadata": [source_metadata(path) for path in files]})
         return 0
 
     def progress(index: int, total: int, result: object, error: Exception | None) -> None:
@@ -59,7 +60,7 @@ def main() -> int:
     if args.width is not None and not (2 <= args.width <= 16384 and 2 <= args.height <= 16384):
         parser.error("직접 해상도는 가로·세로 2~16384 범위여야 합니다.")
 
-    options = ConversionOptions(args.optimize, args.resolution, args.aspect, args.fit, args.width, args.height)
+    options = ConversionOptions(args.optimize, args.resolution, args.aspect, args.fit, args.width, args.height, args.fps)
     results = convert_files(files, Path(args.output), args.target, progress, options)
     emit({"event": "done", "success": len(results), "total": len(files)})
     return 0 if len(results) == len(files) else 1

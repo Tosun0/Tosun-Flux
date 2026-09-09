@@ -219,7 +219,7 @@
                     <Button x:Name="UpdateButton" Visibility="Collapsed" Content="업데이트" Padding="14,9" Margin="8,0,12,0" Click="UpdateButton_Click" />
                 </StackPanel>
                 <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.4." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
+                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.5." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
             </Grid>
 
             <Grid Grid.Row="2">
@@ -282,14 +282,16 @@
                         </Grid.RowDefinitions>
                         <TextBlock Text="변환 설정" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                         <Grid Grid.Row="2">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <TextBlock Text="출력 형식" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                             <TextBlock Grid.Column="2" Text="최적화" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Grid.Column="4" Text="프레임 변환" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                         </Grid>
                         <Grid Grid.Row="4">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Border CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="TargetBox" MinHeight="42" SelectionChanged="TargetBox_SelectionChanged" /></Border>
                             <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="OptimizationBox" MinHeight="42" /></Border>
+                            <Border Grid.Column="4" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="FrameRateBox" MinHeight="42" /></Border>
                         </Grid>
                         <Grid Grid.Row="6">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -299,15 +301,15 @@
                         <Grid Grid.Row="8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Border CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="ResolutionBox" MinHeight="42" SelectionChanged="ResolutionBox_SelectionChanged" /></Border>
-                            <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="AspectBox" MinHeight="42" /></Border>
+                            <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><ComboBox x:Name="AspectBox" MinHeight="42" SelectionChanged="AspectBox_SelectionChanged" /></Border>
                         </Grid>
-                        <Grid x:Name="CustomSizePanel" Grid.Row="9" Visibility="Collapsed" Margin="0,8,0,12">
+                        <Grid x:Name="CustomSizePanel" Grid.Row="9" Visibility="Collapsed" Margin="0,4,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" /><ColumnDefinition Width="30" /><ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border CornerRadius="15" ClipToBounds="True"><TextBox x:Name="CustomWidthBox" Text="1920" MaxLength="5" MinHeight="42" VerticalContentAlignment="Center" ToolTip="가로 픽셀" /></Border>
+                            <Border CornerRadius="15" ClipToBounds="True"><TextBox x:Name="CustomWidthBox" Text="1920" MaxLength="5" MinHeight="38" VerticalContentAlignment="Center" ToolTip="가로 픽셀" TextChanged="CustomSizeBox_TextChanged" /></Border>
                             <TextBlock Grid.Column="1" Text="×" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="14" />
-                            <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><TextBox x:Name="CustomHeightBox" Text="1080" MaxLength="5" MinHeight="42" VerticalContentAlignment="Center" ToolTip="세로 픽셀" /></Border>
+                            <Border Grid.Column="2" CornerRadius="15" ClipToBounds="True"><TextBox x:Name="CustomHeightBox" Text="1080" MaxLength="5" MinHeight="38" VerticalContentAlignment="Center" ToolTip="세로 픽셀" TextChanged="CustomSizeBox_TextChanged" /></Border>
                         </Grid>
                         <TextBlock Grid.Row="10" Text="화면 맞춤" FontSize="12" FontWeight="Light" Foreground="{StaticResource MutedBrush}" />
                         <Grid Grid.Row="12">

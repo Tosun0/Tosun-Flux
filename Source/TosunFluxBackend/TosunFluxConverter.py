@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -46,13 +47,16 @@ class ConversionOptions:
     fit: str = "fit"
     width: int | None = None
     height: int | None = None
+    fps: str = "source"
 
 
 RESOLUTIONS = {
-    "4k": (3840, 2160),
+    "4k-uhd": (3840, 2160),
+    "4k": (4096, 2160),
     "qhd": (2560, 1440),
     "fhd": (1920, 1080),
     "hd": (1280, 720),
+    "sd": (720, 480),
 }
 
 ASPECTS = {
@@ -76,6 +80,38 @@ def bundled_tool(name: str, system_name: str | None = None) -> Path | None:
     if found:
         candidates.append(Path(found))
     return next((candidate for candidate in candidates if candidate.exists()), None)
+
+
+def source_metadata(path: Path) -> dict[str, object]:
+    metadata: dict[str, object] = {"path": str(path), "kind": file_kind(path), "width": None, "height": None, "fps": None}
+    try:
+        if metadata["kind"] == "image":
+            with Image.open(path) as image:
+                metadata["width"], metadata["height"] = image.size
+            return metadata
+
+        if metadata["kind"] != "video":
+            return metadata
+        tool = bundled_tool("ffmpeg.exe", "ffmpeg")
+        if tool is None:
+            return metadata
+        completed = subprocess.run(
+            [str(tool), "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        probe = completed.stderr
+        size_match = re.search(r"Video:.*?(\d{2,6})x(\d{2,6})", probe, re.IGNORECASE | re.DOTALL)
+        fps_match = re.search(r"(\d+(?:\.\d+)?)\s+(?:fps|tbr)", probe, re.IGNORECASE)
+        if size_match:
+            metadata["width"], metadata["height"] = int(size_match.group(1)), int(size_match.group(2))
+        if fps_match:
+            metadata["fps"] = fps_match.group(1)
+    except (OSError, ValueError):
+        pass
+    return metadata
 
 
 def file_kind(path: Path) -> str:
@@ -111,7 +147,7 @@ def supported_targets(path: Path) -> tuple[str, ...]:
             return ("json", "csv", "txt")
         return ("txt", "md", "docx")
     if kind == "video":
-        return ("mp4", "webm", "mov", "mkv", "avi", "gif")
+        return ("mp4", "webm", "mov", "mkv", "avi", "gif", "png-sequence", "jpg-sequence")
     if kind == "audio":
         return ("mp3", "wav", "flac", "m4a", "ogg")
     return ()
@@ -124,7 +160,7 @@ def common_targets(paths: Iterable[Path]) -> tuple[str, ...]:
     common = set(supported_targets(items[0]))
     for path in items[1:]:
         common &= set(supported_targets(path))
-    order = ("png", "jpg", "webp", "bmp", "tiff", "gif", "pdf", "txt", "md", "csv", "json", "docx", "mp4", "webm", "mov", "mkv", "avi", "mp3", "wav", "flac", "m4a", "ogg")
+    order = ("png", "jpg", "webp", "bmp", "tiff", "gif", "pdf", "txt", "md", "csv", "json", "docx", "mp4", "webm", "mov", "mkv", "avi", "png-sequence", "jpg-sequence", "mp3", "wav", "flac", "m4a", "ogg")
     return tuple(target for target in order if target in common)
 
 
@@ -135,6 +171,15 @@ def unique_output(directory: Path, stem: str, extension: str) -> Path:
         candidate = directory / f"{stem} ({index}).{extension}"
         index += 1
     return candidate
+
+
+def unique_sequence_pattern(directory: Path, stem: str, extension: str) -> tuple[Path, str]:
+    index = 0
+    while True:
+        sequence_stem = stem if index == 0 else f"{stem} ({index})"
+        if not any(directory.glob(f"{sequence_stem}_*.{extension}")):
+            return directory / f"{sequence_stem}_%06d.{extension}", sequence_stem
+        index += 1
 
 
 def _read_text(path: Path) -> str:
@@ -289,8 +334,8 @@ def _convert_pdf(source: Path, output_dir: Path, target: str, options: Conversio
     return ConversionResult(source, outputs)
 
 
-def _video_filter(options: ConversionOptions) -> str | None:
-    size = target_dimensions((1920, 1080), options)
+def _video_filter(options: ConversionOptions, source_size: tuple[int, int] = (1920, 1080)) -> str | None:
+    size = target_dimensions(source_size, options)
     if size is None:
         return None
     width, height = (max(2, value // 2 * 2) for value in size)
@@ -305,12 +350,35 @@ def _convert_media(source: Path, output_dir: Path, target: str, options: Convers
     tool = bundled_tool("ffmpeg.exe", "ffmpeg")
     if tool is None:
         raise ConversionError("FFmpeg를 찾을 수 없습니다.")
-    destination = unique_output(output_dir, source.stem, target)
     args = [str(tool), "-hide_banner", "-loglevel", "error", "-y", "-i", str(source)]
     if file_kind(source) == "video":
-        video_filter = _video_filter(options)
+        metadata = source_metadata(source)
+        source_size = (
+            int(metadata["width"]),
+            int(metadata["height"]),
+        ) if metadata.get("width") and metadata.get("height") else (1920, 1080)
+        video_filter = _video_filter(options, source_size)
         if video_filter:
             args.extend(["-vf", video_filter])
+        if options.fps != "source":
+            args.extend(["-r", options.fps])
+        if target in {"png-sequence", "jpg-sequence"}:
+            extension = "png" if target == "png-sequence" else "jpg"
+            destination, sequence_stem = unique_sequence_pattern(output_dir, source.stem, extension)
+            args.extend(["-an"])
+            if extension == "jpg":
+                args.extend(["-q:v", "2"])
+            args.append(str(destination))
+            completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if completed.returncode:
+                message = completed.stderr.strip() or "프레임 시퀀스 변환에 실패했습니다."
+                raise ConversionError(message)
+            outputs = tuple(sorted(output_dir.glob(f"{sequence_stem}_*.{extension}")))
+            if not outputs:
+                raise ConversionError("프레임을 만들지 못했습니다.")
+            return ConversionResult(source, outputs)
+    destination = unique_output(output_dir, source.stem, target)
+    if file_kind(source) == "video":
         if options.optimize != "source" and target != "gif":
             crf = {"quality": "18", "balanced": "23", "small": "28"}[options.optimize]
             if target == "webm":

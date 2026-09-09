@@ -17,6 +17,8 @@ class ConverterTests(unittest.TestCase):
     def test_target_intersection(self) -> None:
         self.assertEqual(common_targets([Path("a.png"), Path("b.jpg")])[0], "png")
         self.assertIn("mp4", supported_targets(Path("clip.mov")))
+        self.assertIn("png-sequence", supported_targets(Path("clip.mov")))
+        self.assertIn("jpg-sequence", supported_targets(Path("clip.mov")))
         self.assertIn("pdf", supported_targets(Path("document.pdf")))
 
     def test_resolution_and_aspect_dimensions(self) -> None:
@@ -26,6 +28,11 @@ class ConverterTests(unittest.TestCase):
     def test_custom_dimensions_override_presets(self) -> None:
         options = ConversionOptions(resolution="fhd", aspect="16:9", width=1440, height=1080)
         self.assertEqual(target_dimensions((4000, 3000), options), (1440, 1080))
+
+    def test_extended_resolution_presets(self) -> None:
+        self.assertEqual(target_dimensions((1920, 1080), ConversionOptions(resolution="4k-uhd")), (3840, 2160))
+        self.assertEqual(target_dimensions((1920, 1080), ConversionOptions(resolution="4k")), (3840, 2160))
+        self.assertEqual(target_dimensions((1920, 1080), ConversionOptions(resolution="sd")), (720, 404))
 
     def test_image_optimization_and_resize(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

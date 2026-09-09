@@ -2,7 +2,7 @@
 
 토순의 파일 컨버터입니다. Windows 네이티브 WPF GUI와 로컬 변환 백엔드로 동작합니다.
 
-현재 버전: `v1.0.4`
+현재 버전: `v1.0.5`
 
 라이선스: [MIT License](LICENSE)
 
@@ -11,7 +11,8 @@
 - Windows Acrylic 글래스 배경과 Per-Monitor V2 DPI 대응
 - 파일 드래그 앤 드롭 및 파일별 삭제
 - 이미지·영상·PDF 최적화
-- 해상도·화면비·맞춤 방식·직접 픽셀 지정
+- 해상도(4K UHD·4K·QHD·FHD·HD·SD)·화면비·맞춤 방식·직접 픽셀 지정
+- 영상 프레임 변환과 PNG/JPG 프레임 시퀀스 추출
 - GitHub Releases 기반 업데이트 확인과 설치
 - 단일 실행 방지 및 시스템 트레이 최소화
 
@@ -73,4 +74,4 @@ python -m unittest discover -s Tests -v
 - 소스: [Tosun Flux](https://github.com/Tosun0/Tosun-Flux)
 - 설치 파일: [GitHub Releases](https://github.com/Tosun0/Tosun-Flux/releases)
 
-설치 파일은 Windows x64용 단일 설치 프로그램이며, 게시자는 `Tosun`입니다.
+설치 파일은 Windows x64용 단일 설치 프로그램이며, 게시자는 `Tosun Studio`입니다.

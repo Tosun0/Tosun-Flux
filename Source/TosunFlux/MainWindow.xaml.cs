@@ -21,21 +21,31 @@ public partial class MainWindow : Window
     private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private UpdateInfo? _availableUpdate;
     private bool _allowClose;
+    private bool _syncingCustomSizeFields;
+    private int? _sourceWidth;
+    private int? _sourceHeight;
+    private string? _sourceFrameRate;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",
         ".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".flv", ".m4v", ".pdf",
+    };
+    private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".flv", ".m4v",
     };
 
     public MainWindow()
     {
         InitializeComponent();
         OptimizationBox.ItemsSource = new[] { "원본 유지", "품질 우선", "균형", "용량 우선" };
-        ResolutionBox.ItemsSource = new[] { "원본", "4K", "QHD", "FHD", "HD", "직접 지정" };
+        ResolutionBox.ItemsSource = new[] { "원본", "4K UHD", "4K", "QHD", "FHD", "HD", "SD", "직접 지정" };
         AspectBox.ItemsSource = new[] { "원본", "16:9", "9:16", "1:1", "4:3", "3:4" };
+        FrameRateBox.ItemsSource = new[] { "원본", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60" };
         OptimizationBox.SelectedIndex = 0;
         ResolutionBox.SelectedIndex = 0;
         AspectBox.SelectedIndex = 0;
+        FrameRateBox.SelectedIndex = 0;
         OutputPath.Text = LoadOutputPath();
         _trayIcon = CreateTrayIcon();
         Closing += MainWindow_Closing;
@@ -160,6 +170,9 @@ public partial class MainWindow : Window
     private async void ClearFiles_Click(object sender, RoutedEventArgs e)
     {
         _files.Clear();
+        _sourceWidth = null;
+        _sourceHeight = null;
+        _sourceFrameRate = null;
         FilesList.Items.Clear();
         TargetBox.Items.Clear();
         TargetBox.SelectedIndex = -1;
@@ -186,6 +199,9 @@ public partial class MainWindow : Window
         FilesList.Items.RemoveAt(index);
         if (_files.Count == 0)
         {
+            _sourceWidth = null;
+            _sourceHeight = null;
+            _sourceFrameRate = null;
             TargetBox.Items.Clear();
             TargetBox.SelectedIndex = -1;
             FileHint.Text = "지원 형식은 파일을 추가하면 자동으로 안내됩니다.";
@@ -202,17 +218,30 @@ public partial class MainWindow : Window
 
     private void ResolutionBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
 
+    private void AspectBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
+
+    private void CustomSizeBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_syncingCustomSizeFields || !IsInitialized || ResolutionBox.SelectedIndex == 7)
+            return;
+
+        ResolutionBox.SelectedIndex = 7;
+        UpdateVisualSettings();
+    }
+
     private void UpdateVisualSettings()
     {
         if (!IsInitialized)
             return;
         var supportsVisualOptions = _files.Count > 0 && _files.All(path => VisualExtensions.Contains(Path.GetExtension(path)));
-        var pdfCompressionOnly = TargetBox.SelectedItem is string target && target.Equals(".pdf", StringComparison.OrdinalIgnoreCase);
-        var customResolution = ResolutionBox.SelectedIndex == 5;
+        var supportsVideoOptions = _files.Count > 0 && _files.All(path => VideoExtensions.Contains(Path.GetExtension(path)));
+        var pdfCompressionOnly = TargetBox.SelectedItem is TargetChoice { Key: "pdf" };
+        var customResolution = ResolutionBox.SelectedIndex == 7;
         OptimizationBox.IsEnabled = supportsVisualOptions;
         ResolutionBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution;
-        var showCustomResolution = supportsVisualOptions && !pdfCompressionOnly && customResolution;
+        FrameRateBox.IsEnabled = supportsVideoOptions && !pdfCompressionOnly;
+        var showCustomResolution = supportsVisualOptions && !pdfCompressionOnly;
         CustomSizePanel.Visibility = showCustomResolution ? Visibility.Visible : Visibility.Collapsed;
         FitChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         FillChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
@@ -222,7 +251,69 @@ public partial class MainWindow : Window
             : pdfCompressionOnly
                 ? "PDF 텍스트는 유지하고 내부 이미지와 구조를 최적화합니다."
                 : "원본은 유지하고 새 파일로 저장합니다.";
+        FrameRateBox.ToolTip = _sourceFrameRate is { Length: > 0 } sourceFrameRate
+            ? $"원본 프레임: {sourceFrameRate} fps"
+            : "영상의 출력 프레임을 선택합니다.";
+        UpdateCustomSizePreview();
     }
+
+    private void UpdateCustomSizePreview()
+    {
+        if (_syncingCustomSizeFields || ResolutionBox.SelectedIndex == 7)
+            return;
+
+        var dimensions = GetPreviewDimensions();
+        if (dimensions is null)
+            return;
+
+        _syncingCustomSizeFields = true;
+        CustomWidthBox.Text = dimensions.Value.Width.ToString();
+        CustomHeightBox.Text = dimensions.Value.Height.ToString();
+        _syncingCustomSizeFields = false;
+    }
+
+    private (int Width, int Height)? GetPreviewDimensions()
+    {
+        if (_files.Count == 0 || ResolutionBox.SelectedIndex == 7)
+            return null;
+
+        var sourceWidth = _sourceWidth ?? 1920;
+        var sourceHeight = _sourceHeight ?? 1080;
+        var resolution = ResolutionBox.SelectedIndex switch
+        {
+            1 => (Width: 3840, Height: 2160),
+            2 => (Width: 4096, Height: 2160),
+            3 => (Width: 2560, Height: 1440),
+            4 => (Width: 1920, Height: 1080),
+            5 => (Width: 1280, Height: 720),
+            6 => (Width: 720, Height: 480),
+            _ => (Width: sourceWidth, Height: sourceHeight),
+        };
+
+        if (AspectBox.SelectedIndex == 0)
+        {
+            var scale = Math.Min((double)resolution.Width / sourceWidth, (double)resolution.Height / sourceHeight);
+            return (Even((int)Math.Round(sourceWidth * scale)), Even((int)Math.Round(sourceHeight * scale)));
+        }
+
+        var ratio = AspectBox.SelectedIndex switch
+        {
+            1 => 16d / 9d,
+            2 => 9d / 16d,
+            3 => 1d,
+            4 => 4d / 3d,
+            5 => 3d / 4d,
+            _ => sourceWidth / (double)sourceHeight,
+        };
+        var longEdge = ResolutionBox.SelectedIndex == 0
+            ? Math.Max(sourceWidth, sourceHeight)
+            : resolution.Width;
+        return ratio >= 1
+            ? (Even(longEdge), Even((int)Math.Round(longEdge / ratio)))
+            : (Even((int)Math.Round(longEdge * ratio)), Even(longEdge));
+    }
+
+    private static int Even(int value) => Math.Max(2, value / 2 * 2);
 
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -240,6 +331,9 @@ public partial class MainWindow : Window
     private async Task RefreshTargetsAsync()
     {
         TargetBox.Items.Clear();
+        _sourceWidth = null;
+        _sourceHeight = null;
+        _sourceFrameRate = null;
         ConvertButton.IsEnabled = false;
         if (_files.Count == 0)
             return;
@@ -262,8 +356,21 @@ public partial class MainWindow : Window
             if (process.ExitCode != 0)
                 throw new InvalidOperationException((await errorTask).Trim());
             using var document = JsonDocument.Parse(output.Trim());
+            if (document.RootElement.TryGetProperty("metadata", out var metadata) && metadata.GetArrayLength() > 0)
+            {
+                var first = metadata[0];
+                if (first.TryGetProperty("width", out var width) && width.ValueKind == JsonValueKind.Number)
+                    _sourceWidth = width.GetInt32();
+                if (first.TryGetProperty("height", out var height) && height.ValueKind == JsonValueKind.Number)
+                    _sourceHeight = height.GetInt32();
+                if (first.TryGetProperty("fps", out var frameRate) && frameRate.ValueKind == JsonValueKind.String)
+                    _sourceFrameRate = frameRate.GetString();
+            }
             foreach (var target in document.RootElement.GetProperty("targets").EnumerateArray())
-                TargetBox.Items.Add($".{target.GetString()}");
+            {
+                var key = target.GetString() ?? string.Empty;
+                TargetBox.Items.Add(new TargetChoice(TargetLabel(key), key));
+            }
         }
         catch (Exception error)
         {
@@ -290,7 +397,7 @@ public partial class MainWindow : Window
 
     private async void Convert_Click(object sender, RoutedEventArgs e)
     {
-        if (_files.Count == 0 || TargetBox.SelectedItem is not string selectedTarget)
+        if (_files.Count == 0 || TargetBox.SelectedItem is not TargetChoice selectedTarget)
             return;
         if (!TryGetCustomDimensions(out var customWidth, out var customHeight))
             return;
@@ -306,13 +413,15 @@ public partial class MainWindow : Window
         startInfo.ArgumentList.Add("--output");
         startInfo.ArgumentList.Add(OutputPath.Text);
         startInfo.ArgumentList.Add("--target");
-        startInfo.ArgumentList.Add(selectedTarget.TrimStart('.'));
+        startInfo.ArgumentList.Add(selectedTarget.Key);
         startInfo.ArgumentList.Add("--optimize");
         startInfo.ArgumentList.Add(new[] { "source", "quality", "balanced", "small" }[Math.Max(0, OptimizationBox.SelectedIndex)]);
         startInfo.ArgumentList.Add("--resolution");
-        startInfo.ArgumentList.Add(new[] { "source", "4k", "qhd", "fhd", "hd", "source" }[Math.Max(0, ResolutionBox.SelectedIndex)]);
+        startInfo.ArgumentList.Add(new[] { "source", "4k-uhd", "4k", "qhd", "fhd", "hd", "sd", "source" }[Math.Clamp(ResolutionBox.SelectedIndex, 0, 7)]);
         startInfo.ArgumentList.Add("--aspect");
-        startInfo.ArgumentList.Add(ResolutionBox.SelectedIndex == 5 ? "source" : new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Max(0, AspectBox.SelectedIndex)]);
+        startInfo.ArgumentList.Add(ResolutionBox.SelectedIndex == 7 ? "source" : new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Clamp(AspectBox.SelectedIndex, 0, 5)]);
+        startInfo.ArgumentList.Add("--fps");
+        startInfo.ArgumentList.Add(FrameRateBox.SelectedIndex <= 0 ? "source" : FrameRateBox.SelectedItem?.ToString() ?? "source");
         startInfo.ArgumentList.Add("--fit");
         startInfo.ArgumentList.Add(FillChoice.IsChecked == true ? "fill" : StretchChoice.IsChecked == true ? "stretch" : "fit");
         if (customWidth is not null && customHeight is not null)
@@ -401,7 +510,7 @@ public partial class MainWindow : Window
     {
         width = null;
         height = null;
-        if (ResolutionBox.SelectedIndex != 5)
+        if (ResolutionBox.SelectedIndex != 7)
             return true;
 
         if (int.TryParse(CustomWidthBox.Text, out var parsedWidth) &&
@@ -415,6 +524,18 @@ public partial class MainWindow : Window
 
         System.Windows.MessageBox.Show(this, "직접 해상도는 가로·세로 모두 2~16384 픽셀로 입력해 주세요.", "Tosun Flux", MessageBoxButton.OK, MessageBoxImage.Warning);
         return false;
+    }
+
+    private static string TargetLabel(string key) => key switch
+    {
+        "png-sequence" => "PNG 프레임 시퀀스",
+        "jpg-sequence" => "JPG 프레임 시퀀스",
+        _ => $".{key}",
+    };
+
+    private sealed record TargetChoice(string Label, string Key)
+    {
+        public override string ToString() => Label;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

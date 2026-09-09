@@ -110,6 +110,7 @@ internal sealed class InstallerForm : Form
         header.Controls.Add(CreateLabel("TOSUN FLUX", new Point(36, 24), new Size(520, 40), 22, FontStyle.Bold, Ink));
         header.Controls.Add(CreateLabel("토순의 파일 컨버터 설치·유지 관리 프로그램", new Point(38, 67), new Size(520, 25), 10.5f, FontStyle.Regular, Muted));
         header.Controls.Add(CreateLabel($"게시자 {Program.Publisher}  ·  v{Program.ProductVersion}", new Point(38, 95), new Size(520, 20), 9, FontStyle.Regular, Muted));
+        header.Controls.Add(CreateLabel("© 2026 Tosun Studio. All rights reserved.", new Point(38, 111), new Size(580, 15), 8.5f, FontStyle.Regular, Muted));
 
         using var appIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
         if (appIcon is not null)

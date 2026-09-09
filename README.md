@@ -6,6 +6,8 @@
 
 라이선스: [MIT License](LICENSE)
 
+저작권 표기: © 2026 Tosun Studio. All rights reserved.
+
 - Windows Acrylic 글래스 배경과 Per-Monitor V2 DPI 대응
 - 파일 드래그 앤 드롭 및 파일별 삭제
 - 이미지·영상·PDF 최적화

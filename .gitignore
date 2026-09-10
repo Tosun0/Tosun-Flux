@@ -1,6 +1,7 @@
 # Generated build and distribution output
 
 /Build/Intermediate/
+/Build/ThirdParty/
 /Source/TosunFlux/bin/
 /Source/TosunFlux/obj/
 /Source/TosunFluxMac/bin/

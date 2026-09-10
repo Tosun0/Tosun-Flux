@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend"))
 from PIL import Image
 
-from TosunFluxConverter import ConversionOptions, bundled_tool, common_targets, convert_file, supported_targets, target_dimensions
+from TosunFluxConverter import ConversionError, ConversionOptions, _is_identity_conversion, _video_filter, bundled_tool, common_targets, convert_file, supported_targets, target_dimensions
 
 
 class ConverterTests(unittest.TestCase):
@@ -39,6 +39,18 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(target_dimensions((1920, 1080), ConversionOptions(resolution="4k")), (3840, 2160))
         self.assertEqual(target_dimensions((1920, 1080), ConversionOptions(resolution="sd")), (720, 404))
 
+    def test_upscale_factor_dimensions(self) -> None:
+        options = ConversionOptions(scale_factor=2.0)
+        self.assertEqual(target_dimensions((960, 540), options), (1920, 1080))
+        self.assertIn("scale=1920:1080", _video_filter(options, (960, 540)))
+
+    def test_upscale_factor_rejects_oversized_output(self) -> None:
+        with self.assertRaises(ConversionError):
+            target_dimensions((5000, 3000), ConversionOptions(scale_factor=4.0))
+
+    def test_upscale_never_uses_identity_copy(self) -> None:
+        self.assertFalse(_is_identity_conversion(Path("photo.jpg"), "jpg", ConversionOptions(scale_factor=2.0, upscale_engine="ai")))
+
     def test_backend_cli_accepts_extended_resolution_presets(self) -> None:
         backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
         for preset in ("4k-uhd", "sd"):
@@ -50,6 +62,28 @@ class ConverterTests(unittest.TestCase):
                 errors="replace",
             )
             self.assertNotEqual(completed.returncode, 2, completed.stderr)
+
+    def test_backend_cli_accepts_scale_factor(self) -> None:
+        backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
+        completed = subprocess.run(
+            [sys.executable, str(backend), "convert", "--output", "out", "--target", "mp4", "--scale-factor", "2", "missing.mp4"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertNotEqual(completed.returncode, 2, completed.stderr)
+
+    def test_backend_cli_accepts_ai_upscale_engine(self) -> None:
+        backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
+        completed = subprocess.run(
+            [sys.executable, str(backend), "convert", "--output", "out", "--target", "mp4", "--scale-factor", "2", "--upscale-engine", "ai", "missing.mp4"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertNotEqual(completed.returncode, 2, completed.stderr)
 
     def test_image_optimization_and_resize(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

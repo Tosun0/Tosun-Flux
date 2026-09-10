@@ -28,6 +28,9 @@ public partial class MainWindow : Window
     private int? SourceWidth => _sourceMetadata.FirstOrDefault()?.Width;
     private int? SourceHeight => _sourceMetadata.FirstOrDefault()?.Height;
     private double? SourceFrameRate => _sourceMetadata.FirstOrDefault()?.FrameRate;
+    private const int Scale2ResolutionIndex = 7;
+    private const int Scale4ResolutionIndex = 8;
+    private const int CustomResolutionIndex = 9;
     private static readonly HashSet<string> VisualExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico",
@@ -47,7 +50,7 @@ public partial class MainWindow : Window
             _tosunSpeechTimer.Stop();
         };
         OptimizationBox.ItemsSource = new[] { "원본 유지", "품질 우선", "균형", "용량 우선" };
-        ResolutionBox.ItemsSource = new[] { "원본", "4K", "4K UHD", "QHD", "FHD", "HD", "SD", "직접 지정" };
+        ResolutionBox.ItemsSource = new[] { "원본", "4K", "4K UHD", "QHD", "FHD", "HD", "SD", "2x AI 업스케일", "4x AI 업스케일", "직접 지정" };
         AspectBox.ItemsSource = new[] { "원본", "16:9", "9:16", "1:1", "4:3", "3:4" };
         FrameRateBox.ItemsSource = new[] { "원본", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60" };
         OptimizationBox.SelectedIndex = 0;
@@ -239,9 +242,9 @@ public partial class MainWindow : Window
         if (_syncingCustomSizeFields || !IsInitialized)
             return;
 
-        if (ResolutionBox.SelectedIndex != 7)
+        if (ResolutionBox.SelectedIndex != CustomResolutionIndex)
         {
-            ResolutionBox.SelectedIndex = 7;
+            ResolutionBox.SelectedIndex = CustomResolutionIndex;
             UpdateVisualSettings();
             return;
         }
@@ -257,10 +260,11 @@ public partial class MainWindow : Window
         var supportsVisualOptions = _files.Count > 0 && _files.All(path => VisualExtensions.Contains(Path.GetExtension(path)));
         var supportsVideoOptions = _files.Count > 0 && _files.All(path => VideoExtensions.Contains(Path.GetExtension(path)));
         var pdfCompressionOnly = TargetBox.SelectedItem is TargetChoice { Key: "pdf" };
-        var customResolution = ResolutionBox.SelectedIndex == 7;
+        var customResolution = ResolutionBox.SelectedIndex == CustomResolutionIndex;
+        var scaleResolution = ResolutionBox.SelectedIndex is Scale2ResolutionIndex or Scale4ResolutionIndex;
         OptimizationBox.IsEnabled = supportsVisualOptions;
         ResolutionBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
-        AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution;
+        AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution && !scaleResolution;
         FrameRateBox.IsEnabled = supportsVideoOptions && !pdfCompressionOnly;
         UpdateFrameRateVisibility(supportsVideoOptions && !pdfCompressionOnly);
         var showCustomResolution = supportsVisualOptions && !pdfCompressionOnly;
@@ -295,7 +299,7 @@ public partial class MainWindow : Window
 
     private void UpdateCustomSizePreview()
     {
-        if (_syncingCustomSizeFields || ResolutionBox.SelectedIndex == 7)
+        if (_syncingCustomSizeFields || ResolutionBox.SelectedIndex == CustomResolutionIndex)
             return;
 
         var dimensions = GetPreviewDimensions();
@@ -310,7 +314,7 @@ public partial class MainWindow : Window
 
     private (int Width, int Height)? GetPreviewDimensions()
     {
-        if (_files.Count == 0 || ResolutionBox.SelectedIndex == 7)
+        if (_files.Count == 0 || ResolutionBox.SelectedIndex == CustomResolutionIndex)
             return null;
 
         return GetPreviewDimensions(SourceWidth ?? 1920, SourceHeight ?? 1080);
@@ -318,6 +322,12 @@ public partial class MainWindow : Window
 
     private (int Width, int Height) GetPreviewDimensions(int sourceWidth, int sourceHeight)
     {
+        if (ResolutionBox.SelectedIndex is Scale2ResolutionIndex or Scale4ResolutionIndex)
+        {
+            var factor = ResolutionBox.SelectedIndex == Scale4ResolutionIndex ? 4d : 2d;
+            return (Even((int)Math.Round(sourceWidth * factor)), Even((int)Math.Round(sourceHeight * factor)));
+        }
+
         var resolution = ResolutionBox.SelectedIndex switch
         {
             1 => (Width: 4096, Height: 2160),
@@ -356,7 +366,7 @@ public partial class MainWindow : Window
 
     private (int Width, int Height)? GetActivePreviewDimensions(int sourceWidth, int sourceHeight)
     {
-        if (ResolutionBox.SelectedIndex == 7 &&
+        if (ResolutionBox.SelectedIndex == CustomResolutionIndex &&
             int.TryParse(CustomWidthBox.Text, out var width) &&
             int.TryParse(CustomHeightBox.Text, out var height) &&
             width is >= 2 and <= 16384 && height is >= 2 and <= 16384)
@@ -606,9 +616,14 @@ public partial class MainWindow : Window
         startInfo.ArgumentList.Add("--optimize");
         startInfo.ArgumentList.Add(new[] { "source", "quality", "balanced", "small" }[Math.Max(0, OptimizationBox.SelectedIndex)]);
         startInfo.ArgumentList.Add("--resolution");
-        startInfo.ArgumentList.Add(new[] { "source", "4k", "4k-uhd", "qhd", "fhd", "hd", "sd", "source" }[Math.Clamp(ResolutionBox.SelectedIndex, 0, 7)]);
+        startInfo.ArgumentList.Add(new[] { "source", "4k", "4k-uhd", "qhd", "fhd", "hd", "sd", "source", "source", "source" }[Math.Clamp(ResolutionBox.SelectedIndex, 0, CustomResolutionIndex)]);
+        startInfo.ArgumentList.Add("--scale-factor");
+        var scaleFactor = ResolutionBox.SelectedIndex == Scale4ResolutionIndex ? 4d : ResolutionBox.SelectedIndex == Scale2ResolutionIndex ? 2d : 1d;
+        startInfo.ArgumentList.Add(scaleFactor.ToString(CultureInfo.InvariantCulture));
+        startInfo.ArgumentList.Add("--upscale-engine");
+        startInfo.ArgumentList.Add(scaleFactor == 1d ? "resize" : "ai");
         startInfo.ArgumentList.Add("--aspect");
-        startInfo.ArgumentList.Add(ResolutionBox.SelectedIndex == 7 ? "source" : new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Clamp(AspectBox.SelectedIndex, 0, 5)]);
+        startInfo.ArgumentList.Add(ResolutionBox.SelectedIndex is Scale2ResolutionIndex or Scale4ResolutionIndex or CustomResolutionIndex ? "source" : new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Clamp(AspectBox.SelectedIndex, 0, 5)]);
         startInfo.ArgumentList.Add("--fps");
         startInfo.ArgumentList.Add(FrameRateBox.SelectedIndex <= 0 ? "source" : FrameRateBox.SelectedItem?.ToString() ?? "source");
         startInfo.ArgumentList.Add("--fit");
@@ -704,7 +719,7 @@ public partial class MainWindow : Window
     {
         width = null;
         height = null;
-        if (ResolutionBox.SelectedIndex != 7)
+        if (ResolutionBox.SelectedIndex != CustomResolutionIndex)
             return true;
 
         if (int.TryParse(CustomWidthBox.Text, out var parsedWidth) &&

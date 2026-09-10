@@ -87,6 +87,8 @@
                 <ComboBoxItem Content="FHD" Tag="fhd" />
                 <ComboBoxItem Content="HD" Tag="hd" />
                 <ComboBoxItem Content="SD" Tag="sd" />
+                <ComboBoxItem Content="2x AI 업스케일" Tag="scale-2" />
+                <ComboBoxItem Content="4x AI 업스케일" Tag="scale-4" />
                 <ComboBoxItem Content="직접 지정" Tag="custom" />
               </ComboBox>
             </StackPanel>
@@ -152,7 +154,7 @@
 
     <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="8,18,8,0">
       <TextBlock Text="지원 형식: 이미지 · 영상 · PDF · 텍스트 · 음성" FontSize="12" Foreground="#737D99" VerticalAlignment="Center" />
-      <TextBlock Grid.Column="1" Text="v1.1.0  ·  © 2026 Tosun Studio" FontSize="12" Foreground="#737D99" />
+      <TextBlock Grid.Column="1" Text="v1.2.1  ·  © 2026 Tosun Studio" FontSize="12" Foreground="#737D99" />
     </Grid>
   </Grid>
 </Window>

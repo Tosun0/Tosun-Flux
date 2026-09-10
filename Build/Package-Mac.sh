@@ -2,10 +2,11 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="1.1.0"
+VERSION="1.2.1"
 PYTHON_BIN="${TOSUN_PYTHON:-python3}"
 FFMPEG_BIN="${TOSUN_FFMPEG:-ffmpeg}"
 PDFTOPPM_BIN="${TOSUN_PDFTOPPM:-pdftoppm}"
+REALESGAN_DIR="${TOSUN_REALESRGAN_DIR:-}"
 if [[ -n "${TOSUN_MAC_RUNTIMES:-}" ]]; then
   RUNTIMES_STRING="$TOSUN_MAC_RUNTIMES"
 elif [[ "$(uname -m)" == "arm64" ]]; then
@@ -28,6 +29,15 @@ PYTHON_BIN="$(resolve_command "$PYTHON_BIN")"
 FFMPEG_BIN="$(resolve_command "$FFMPEG_BIN")"
 PDFTOPPM_BIN="$(resolve_command "$PDFTOPPM_BIN")"
 DOTNET_BIN="$(resolve_command "${DOTNET:-dotnet}")"
+[[ -n "$REALESGAN_DIR" && -d "$REALESGAN_DIR" ]] || { echo "Real-ESRGAN 경로가 없습니다: TOSUN_REALESRGAN_DIR" >&2; exit 1; }
+REALESGAN_BIN="$(find "$REALESGAN_DIR" -type f -name 'realesrgan-ncnn-vulkan' -print -quit)"
+[[ -n "$REALESGAN_BIN" ]] || { echo "Real-ESRGAN 실행 파일을 찾을 수 없습니다: $REALESGAN_DIR" >&2; exit 1; }
+REALESGAN_MODELS="$(dirname "$REALESGAN_BIN")/models"
+[[ -d "$REALESGAN_MODELS" ]] || { echo "Real-ESRGAN 모델 폴더를 찾을 수 없습니다: $REALESGAN_MODELS" >&2; exit 1; }
+REALESGAN_DATA_ARGS=()
+while IFS= read -r -d '' model; do
+  REALESGAN_DATA_ARGS+=(--add-data "$model:vendor/models")
+done < <(find "$REALESGAN_MODELS" -type f -print0)
 
 OUTPUT_ROOT="$PROJECT_ROOT/packaged/Mac"
 INTERMEDIATE_ROOT="$PROJECT_ROOT/Build/Intermediate/TosunFluxMac"
@@ -66,6 +76,8 @@ for runtime in "${RUNTIMES[@]}"; do
     --exclude-module scipy \
     --add-binary "$FFMPEG_BIN:vendor" \
     --add-binary "$PDFTOPPM_BIN:vendor" \
+    --add-binary "$REALESGAN_BIN:vendor" \
+    "${REALESGAN_DATA_ARGS[@]}" \
     "$BACKEND_ENTRY"
 
   app_host="$(find "$publish_dir" -maxdepth 1 -type f -perm -111 ! -name '*.dll' | head -n 1)"

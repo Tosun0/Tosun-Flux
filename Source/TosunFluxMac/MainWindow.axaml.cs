@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Avalonia.Controls;
@@ -12,7 +13,7 @@ namespace TosunFluxMac;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
-    private const string Version = "1.1.0";
+    private const string Version = "1.2.1";
     private readonly string _settingsPath;
     private string _target = "png";
     private bool _busy;
@@ -116,6 +117,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var value = GetTag(ResolutionCombo);
         IsCustomResolution = value == "custom";
         CustomResolutionRow.IsVisible = IsCustomResolution;
+        AspectCombo.IsEnabled = !IsCustomResolution && value is not ("scale-2" or "scale-4");
         OnPropertyChanged(nameof(IsCustomResolution));
     }
 
@@ -165,7 +167,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "--resolution", options.Resolution,
                 "--aspect", options.Aspect,
                 "--fit", options.Fit,
-                "--fps", options.Fps);
+                "--fps", options.Fps,
+                "--scale-factor", options.ScaleFactor.ToString(CultureInfo.InvariantCulture),
+                "--upscale-engine", options.ScaleFactor == 1d ? "resize" : "ai");
             if (options.Width is not null && options.Height is not null)
             {
                 command.ArgumentList.Add("--width");
@@ -288,19 +292,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var height = ParseDimension(HeightBox.Text);
         if (resolution == "custom" && (width is null || height is null || width < 2 || height < 2 || width > 16384 || height > 16384))
         {
-            options = new ConversionOptions("source", "source", "source", "fit", null, null, "source");
+            options = new ConversionOptions("source", "source", "source", "fit", null, null, "source", 1d);
             error = "직접 해상도는 가로·세로 2~16384 범위로 입력하세요.";
             return false;
         }
 
+        var scaleFactor = resolution switch
+        {
+            "scale-2" => 2d,
+            "scale-4" => 4d,
+            _ => 1d,
+        };
+        var isUpscale = scaleFactor != 1d;
         options = new ConversionOptions(
             GetTag(OptimizeCombo),
-            resolution == "custom" ? "source" : resolution,
-            GetTag(AspectCombo),
+            resolution is "custom" or "scale-2" or "scale-4" ? "source" : resolution,
+            isUpscale ? "source" : GetTag(AspectCombo),
             GetTag(FitCombo),
             resolution == "custom" ? width : null,
             resolution == "custom" ? height : null,
-            FpsPanel.IsVisible ? GetTag(FpsCombo) : "source");
+            FpsPanel.IsVisible ? GetTag(FpsCombo) : "source",
+            scaleFactor);
         error = "";
         return true;
     }
@@ -471,7 +483,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         string Fit,
         int? Width,
         int? Height,
-        string Fps);
+        string Fps,
+        double ScaleFactor);
 }
 
 public sealed class SourceFile

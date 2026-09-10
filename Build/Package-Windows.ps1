@@ -1,7 +1,8 @@
 param(
     [string]$Python = $env:TOSUN_PYTHON,
     [string]$Ffmpeg = $env:TOSUN_FFMPEG,
-    [string]$PopplerBin = $env:TOSUN_POPPLER_BIN
+    [string]$PopplerBin = $env:TOSUN_POPPLER_BIN,
+    [string]$RealEsrganDir = $env:TOSUN_REALESRGAN_DIR
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
@@ -19,6 +20,12 @@ $python = Resolve-Executable $Python 'python'
 $ffmpeg = Resolve-Executable $Ffmpeg 'ffmpeg'
 if ([string]::IsNullOrWhiteSpace($PopplerBin)) { throw 'Poppler 경로가 없습니다. -PopplerBin 또는 TOSUN_POPPLER_BIN을 지정하세요.' }
 $popplerBin = (Resolve-Path -LiteralPath $PopplerBin).Path
+if ([string]::IsNullOrWhiteSpace($RealEsrganDir)) { throw 'Real-ESRGAN 경로가 없습니다. -RealEsrganDir 또는 TOSUN_REALESRGAN_DIR을 지정하세요.' }
+$realEsrganDir = (Resolve-Path -LiteralPath $RealEsrganDir).Path
+$realEsrganExe = Get-ChildItem -LiteralPath $realEsrganDir -Recurse -File | Where-Object Name -eq 'realesrgan-ncnn-vulkan.exe' | Select-Object -First 1
+if (-not $realEsrganExe) { throw "Real-ESRGAN 실행 파일을 찾을 수 없습니다: $realEsrganDir" }
+$realEsrganModels = Join-Path $realEsrganExe.Directory.FullName 'models'
+if (-not (Test-Path -LiteralPath $realEsrganModels)) { throw "Real-ESRGAN 모델 폴더를 찾을 수 없습니다: $realEsrganModels" }
 $packageRoot = Join-Path $projectRoot 'Build\Intermediate\TosunFluxPackage'
 $backendBuildRoot = Join-Path $projectRoot 'Build\Intermediate\TosunFluxBackend'
 $backendDistRoot = Join-Path $packageRoot 'backend'
@@ -38,6 +45,21 @@ Get-ChildItem -LiteralPath $popplerBin -File | ForEach-Object {
     $binaryArgs += '--add-binary'
     $binaryArgs += "$($_.FullName);vendor"
 }
+$binaryArgs += '--add-binary'
+$binaryArgs += "$($realEsrganExe.FullName);vendor"
+Get-ChildItem -LiteralPath $realEsrganExe.Directory.FullName -Filter '*.dll' -File | ForEach-Object {
+    $binaryArgs += '--add-binary'
+    $binaryArgs += "$($_.FullName);vendor"
+}
+Get-ChildItem -LiteralPath $realEsrganModels -File | ForEach-Object {
+    $dataArgs += '--add-data'
+    $dataArgs += "$($_.FullName);vendor\models"
+}
+$license = Get-ChildItem -LiteralPath $realEsrganDir -Recurse -Filter 'LICENSE' -File | Select-Object -First 1
+if ($license) {
+    $dataArgs += '--add-data'
+    $dataArgs += "$($license.FullName);vendor"
+}
 & $python -m PyInstaller --noconfirm --clean --onedir --console --name 'TosunFluxBackend' --distpath $backendDistRoot --workpath $backendBuildRoot --specpath $backendBuildRoot --exclude-module numpy --exclude-module scipy @binaryArgs @dataArgs $backendEntry
 if ($LASTEXITCODE -ne 0) { throw "Backend packaging failed with exit code $LASTEXITCODE" }
 $backendInternalRoot = Join-Path $backendDistRoot 'TosunFluxBackend\_internal'
@@ -54,7 +76,7 @@ $readme = @"
 
 토순의 파일 컨버터
 
-버전: v1.1.0
+버전: v1.2.1
 
 실행 파일: Tosun Flux.exe
 "@

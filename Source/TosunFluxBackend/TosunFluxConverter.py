@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -42,6 +44,8 @@ class ConversionOptions:
     width: int | None = None
     height: int | None = None
     fps: str = "source"
+    scale_factor: float = 1.0
+    upscale_engine: str = "resize"
 
 
 RESOLUTIONS = {
@@ -52,6 +56,12 @@ RESOLUTIONS = {
     "hd": (1280, 720),
     "sd": (720, 480),
 }
+
+MAX_OUTPUT_DIMENSION = 16384
+UPSCALE_FACTORS = (1.0, 2.0, 4.0)
+UPSCALE_ENGINES = ("resize", "ai")
+AI_UPSCALE_MODEL = "realesrgan-x4plus"
+AI_4X_TILE_SIZE = 128
 
 ASPECTS = {
     "16:9": 16 / 9,
@@ -81,6 +91,15 @@ def bundled_tool(name: str, system_name: str | None = None) -> Path | None:
     if found:
         candidates.append(Path(found))
     return next((candidate for candidate in candidates if candidate.exists()), None)
+
+
+def ai_upscaler_tool() -> Path | None:
+    configured = os.environ.get("TOSUN_REALESRGAN_BIN")
+    if configured:
+        configured_path = Path(configured)
+        if configured_path.is_file():
+            return configured_path
+    return bundled_tool("realesrgan-ncnn-vulkan", "realesrgan-ncnn-vulkan")
 
 
 def source_metadata(path: Path) -> dict[str, object]:
@@ -193,6 +212,8 @@ def _is_identity_conversion(source: Path, target: str, options: ConversionOption
         and options.width is None
         and options.height is None
         and options.fps == "source"
+        and options.scale_factor == 1.0
+        and options.upscale_engine == "resize"
     )
 
 
@@ -208,6 +229,15 @@ def _read_text(path: Path) -> str:
 def target_dimensions(source_size: tuple[int, int], options: ConversionOptions) -> tuple[int, int] | None:
     if options.width is not None and options.height is not None:
         return options.width, options.height
+    if options.scale_factor not in UPSCALE_FACTORS:
+        raise ConversionError("업스케일 배율은 원본, 2x, 4x만 지원합니다.")
+    if options.scale_factor != 1.0:
+        source_width, source_height = source_size
+        width = round(source_width * options.scale_factor)
+        height = round(source_height * options.scale_factor)
+        if max(width, height) > MAX_OUTPUT_DIMENSION:
+            raise ConversionError(f"업스케일 결과는 한 변 {MAX_OUTPUT_DIMENSION}픽셀을 넘을 수 없습니다.")
+        return max(2, width // 2 * 2), max(2, height // 2 * 2)
     if options.resolution == "source" and options.aspect == "source":
         return None
 
@@ -254,6 +284,36 @@ def _apply_image_geometry(image: Image.Image, target: str, options: ConversionOp
     return canvas
 
 
+def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions) -> Path:
+    if options.upscale_engine not in UPSCALE_ENGINES:
+        raise ConversionError(f"지원하지 않는 업스케일 엔진입니다: {options.upscale_engine}")
+    tool = ai_upscaler_tool()
+    if tool is None:
+        raise ConversionError("AI 업스케일러를 찾을 수 없습니다. Real-ESRGAN 실행 파일과 모델을 vendor 폴더에 넣으세요.")
+    if options.scale_factor not in (2.0, 4.0):
+        raise ConversionError("AI 업스케일은 2x 또는 4x만 지원합니다.")
+    args = [
+        str(tool),
+        "-i", str(source),
+        "-o", str(destination),
+        "-m", str(tool.parent / "models"),
+        "-n", AI_UPSCALE_MODEL,
+        "-s", str(int(options.scale_factor)),
+    ]
+    if options.scale_factor == 4.0:
+        args.extend(["-t", str(AI_4X_TILE_SIZE)])
+    completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if completed.returncode:
+        message = completed.stderr.strip() or completed.stdout.strip() or "AI 업스케일에 실패했습니다."
+        raise ConversionError(message)
+    if source.is_dir():
+        if not destination.is_dir() or not any(destination.glob("*.png")):
+            raise ConversionError("AI 업스케일 결과 프레임을 만들지 못했습니다.")
+    elif not destination.is_file():
+        raise ConversionError("AI 업스케일 결과 파일을 만들지 못했습니다.")
+    return destination
+
+
 def _write_image(image: Image.Image, destination: Path, target: str, options: ConversionOptions) -> None:
     target_format = {"jpg": "JPEG", "tiff": "TIFF"}.get(target, target.upper())
     converted = image
@@ -283,6 +343,12 @@ def _write_image(image: Image.Image, destination: Path, target: str, options: Co
 
 def _convert_image(source: Path, output_dir: Path, target: str, options: ConversionOptions) -> ConversionResult:
     destination = unique_output(output_dir, source.stem, target)
+    if options.upscale_engine == "ai" and options.scale_factor != 1.0:
+        with tempfile.TemporaryDirectory(prefix="tosunflux-ai-") as temporary:
+            upscaled = _run_ai_upscale(source, Path(temporary) / "upscaled.png", options)
+            with Image.open(upscaled) as image:
+                _write_image(image, destination, target, options)
+        return ConversionResult(source, (destination,))
     with Image.open(source) as image:
         transformed = _apply_image_geometry(image, target, options)
         try:
@@ -342,7 +408,7 @@ def _convert_pdf(source: Path, output_dir: Path, target: str, options: Conversio
     outputs = tuple(sorted(output_dir.glob(f"{output_stem.name}-*.{target}")))
     if not outputs:
         raise ConversionError("PDF 페이지 이미지를 만들지 못했습니다.")
-    if options.aspect != "source" or (options.width is not None and options.height is not None):
+    if options.aspect != "source" or options.scale_factor != 1.0 or (options.width is not None and options.height is not None):
         for output in outputs:
             with Image.open(output) as page:
                 transformed = _apply_image_geometry(page, target, options)
@@ -365,7 +431,72 @@ def _video_filter(options: ConversionOptions, source_size: tuple[int, int] = (19
     return f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"
 
 
+def _video_encoding_args(target: str, options: ConversionOptions) -> list[str]:
+    if options.optimize == "source" or target == "gif":
+        return []
+    crf = {"quality": "18", "balanced": "23", "small": "28"}[options.optimize]
+    if target == "webm":
+        return ["-c:v", "libvpx-vp9", "-crf", crf, "-b:v", "0", "-c:a", "libopus"]
+    audio_rate = {"quality": "192k", "balanced": "160k", "small": "128k"}[options.optimize]
+    return ["-c:v", "libx264", "-preset", "medium", "-crf", crf, "-c:a", "aac", "-b:a", audio_rate]
+
+
+def _convert_ai_video(source: Path, output_dir: Path, target: str, options: ConversionOptions) -> ConversionResult:
+    ffmpeg = bundled_tool("ffmpeg", "ffmpeg")
+    if ffmpeg is None:
+        raise ConversionError("FFmpeg를 찾을 수 없습니다.")
+    metadata = source_metadata(source)
+    fps = str(metadata.get("fps") or "30")
+    destination = unique_output(output_dir, source.stem, target)
+    with tempfile.TemporaryDirectory(prefix="tosunflux-ai-video-") as temporary:
+        root = Path(temporary)
+        source_frames = root / "source"
+        output_frames = root / "upscaled"
+        source_frames.mkdir()
+        output_frames.mkdir()
+        extract_args = [
+            str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source), "-an", "-vsync", "0", str(source_frames / "%08d.png"),
+        ]
+        extracted = subprocess.run(extract_args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if extracted.returncode:
+            raise ConversionError(extracted.stderr.strip() or "영상 프레임 추출에 실패했습니다.")
+        _run_ai_upscale(source_frames, output_frames, options)
+        frames = sorted(output_frames.glob("*.png"))
+        if not frames:
+            raise ConversionError("AI 업스케일 결과 프레임을 만들지 못했습니다.")
+
+        if target in {"png-sequence", "jpg-sequence"}:
+            extension = "png" if target == "png-sequence" else "jpg"
+            pattern, sequence_stem = unique_sequence_pattern(output_dir, source.stem, extension)
+            outputs: list[Path] = []
+            for index, frame in enumerate(frames):
+                output = output_dir / f"{sequence_stem}_{index:06d}.{extension}"
+                if extension == "png":
+                    shutil.copy2(frame, output)
+                else:
+                    with Image.open(frame) as image:
+                        _write_image(image, output, extension, options)
+                outputs.append(output)
+            return ConversionResult(source, tuple(outputs))
+
+        args = [
+            str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+            "-framerate", fps, "-i", str(output_frames / "%08d.png"),
+        ]
+        if target != "gif":
+            args.extend(["-i", str(source), "-map", "0:v:0", "-map", "1:a?", "-shortest"])
+        args.extend(_video_encoding_args(target, options))
+        args.append(str(destination))
+        encoded = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if encoded.returncode:
+            raise ConversionError(encoded.stderr.strip() or "AI 업스케일 영상 인코딩에 실패했습니다.")
+    return ConversionResult(source, (destination,))
+
+
 def _convert_media(source: Path, output_dir: Path, target: str, options: ConversionOptions) -> ConversionResult:
+    if file_kind(source) == "video" and options.upscale_engine == "ai" and options.scale_factor != 1.0:
+        return _convert_ai_video(source, output_dir, target, options)
     tool = bundled_tool("ffmpeg", "ffmpeg")
     if tool is None:
         raise ConversionError("FFmpeg를 찾을 수 없습니다.")
@@ -401,12 +532,7 @@ def _convert_media(source: Path, output_dir: Path, target: str, options: Convers
     destination = unique_output(output_dir, source.stem, target)
     if file_kind(source) == "video":
         if options.optimize != "source" and target != "gif":
-            crf = {"quality": "18", "balanced": "23", "small": "28"}[options.optimize]
-            if target == "webm":
-                args.extend(["-c:v", "libvpx-vp9", "-crf", crf, "-b:v", "0", "-c:a", "libopus"])
-            else:
-                audio_rate = {"quality": "192k", "balanced": "160k", "small": "128k"}[options.optimize]
-                args.extend(["-c:v", "libx264", "-preset", "medium", "-crf", crf, "-c:a", "aac", "-b:a", audio_rate])
+            args.extend(_video_encoding_args(target, options))
     args.append(str(destination))
     completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if completed.returncode:

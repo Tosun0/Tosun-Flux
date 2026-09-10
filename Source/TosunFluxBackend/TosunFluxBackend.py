@@ -30,11 +30,13 @@ def main() -> int:
     convert_parser.add_argument("--width", type=int)
     convert_parser.add_argument("--height", type=int)
     convert_parser.add_argument("--fps", choices=("source", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60"), default="source")
+    convert_parser.add_argument("--scale-factor", type=float, choices=(1.0, 2.0, 4.0), default=1.0)
+    convert_parser.add_argument("--upscale-engine", choices=("resize", "ai"), default="resize")
     convert_parser.add_argument("files", nargs="+")
 
     args = parser.parse_args()
     if args.command == "health":
-        emit({"status": "ok", "product": "Tosun Flux", "version": "1.1.0"})
+        emit({"status": "ok", "product": "Tosun Flux", "version": "1.2.1"})
         return 0
 
     files = [Path(item) for item in args.files]
@@ -60,7 +62,7 @@ def main() -> int:
     if args.width is not None and not (2 <= args.width <= 16384 and 2 <= args.height <= 16384):
         parser.error("직접 해상도는 가로·세로 2~16384 범위여야 합니다.")
 
-    options = ConversionOptions(args.optimize, args.resolution, args.aspect, args.fit, args.width, args.height, args.fps)
+    options = ConversionOptions(args.optimize, args.resolution, args.aspect, args.fit, args.width, args.height, args.fps, args.scale_factor, args.upscale_engine)
     results = convert_files(files, Path(args.output), args.target, progress, options)
     emit({"event": "done", "success": len(results), "total": len(files)})
     return 0 if len(results) == len(files) else 1

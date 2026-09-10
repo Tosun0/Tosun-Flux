@@ -19,6 +19,16 @@ mkdir -p "$UNIVERSAL_APP/Contents/MacOS" "$UNIVERSAL_APP/Contents/Resources"
 cp -R "$ARM_APP/Contents/Resources/." "$UNIVERSAL_APP/Contents/Resources/"
 cp "$ARM_APP/Contents/Info.plist" "$UNIVERSAL_APP/Contents/Info.plist"
 
+contains_arches() {
+  local available="$1"
+  local required="$2"
+  local architecture
+  for architecture in $required; do
+    [[ " $available " == *" $architecture "* ]] || return 1
+  done
+  return 0
+}
+
 merge_tree() {
   local arm_root="$1"
   local x64_root="$2"
@@ -30,9 +40,19 @@ merge_tree() {
     local relative="${x64_file#"$x64_root/"}"
     local arm_file="$output_root/$relative"
     if [[ -f "$arm_file" ]] && file "$arm_file" | grep -q 'Mach-O' && file "$x64_file" | grep -q 'Mach-O'; then
-      local temporary="$arm_file.universal"
-      lipo -create "$arm_file" "$x64_file" -output "$temporary"
-      mv "$temporary" "$arm_file"
+      local arm_arches
+      local x64_arches
+      arm_arches="$(lipo -archs "$arm_file")"
+      x64_arches="$(lipo -archs "$x64_file")"
+      if contains_arches "$arm_arches" "$x64_arches"; then
+        : # The arm64 build already contains every architecture from the Intel build.
+      elif contains_arches "$x64_arches" "$arm_arches"; then
+        cp "$x64_file" "$arm_file"
+      else
+        local temporary="$arm_file.universal"
+        lipo -create "$arm_file" "$x64_file" -output "$temporary"
+        mv "$temporary" "$arm_file"
+      fi
     elif [[ ! -e "$arm_file" ]]; then
       mkdir -p "$(dirname "$arm_file")"
       cp -R "$x64_file" "$arm_file"

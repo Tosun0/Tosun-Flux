@@ -446,7 +446,7 @@ def _convert_ai_video(source: Path, output_dir: Path, target: str, options: Conv
     if ffmpeg is None:
         raise ConversionError("FFmpeg를 찾을 수 없습니다.")
     metadata = source_metadata(source)
-    fps = str(metadata.get("fps") or "30")
+    fps = options.fps if options.fps != "source" else str(metadata.get("fps") or "30")
     destination = unique_output(output_dir, source.stem, target)
     with tempfile.TemporaryDirectory(prefix="tosunflux-ai-video-") as temporary:
         root = Path(temporary)
@@ -456,8 +456,11 @@ def _convert_ai_video(source: Path, output_dir: Path, target: str, options: Conv
         output_frames.mkdir()
         extract_args = [
             str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
-            "-i", str(source), "-an", "-vsync", "0", str(source_frames / "%08d.png"),
+            "-i", str(source), "-an",
         ]
+        if options.fps != "source":
+            extract_args.extend(["-vf", f"fps={options.fps}"])
+        extract_args.extend(["-vsync", "0", str(source_frames / "%08d.png")])
         extracted = subprocess.run(extract_args, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if extracted.returncode:
             raise ConversionError(extracted.stderr.strip() or "영상 프레임 추출에 실패했습니다.")

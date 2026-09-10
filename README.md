@@ -77,12 +77,15 @@ $env:TOSUN_REALESRGAN_DIR = 'C:\Tools\realesrgan-ncnn-vulkan-20220424-windows'
 
 ## macOS 패키징
 
-macOS GUI는 기존 변환 백엔드를 그대로 사용하며 Apple Silicon과 Intel용 앱 번들을 각각 만들 수 있습니다. macOS에서 Python, PyInstaller, FFmpeg, Poppler, .NET 8 SDK를 준비한 뒤 실행합니다.
+macOS GUI는 기존 변환 백엔드를 그대로 사용하며 Apple Silicon과 Intel용 앱 번들을 각각 만들 수 있습니다. macOS에서 Python, PyInstaller, FFmpeg, Poppler, Real-ESRGAN portable 패키지, .NET 8 SDK를 준비한 뒤 실행합니다.
 
 ```bash
 chmod +x ./Build/Package-Mac.sh
+export TOSUN_REALESRGAN_DIR="$HOME/Tools/realesrgan-ncnn-vulkan-20220424-macos"
 ./Build/Package-Mac.sh
 ```
+
+Real-ESRGAN macOS portable 패키지는 공식 릴리즈의 `realesrgan-ncnn-vulkan-20220424-macos.zip`을 내려받아 압축 해제합니다. `TOSUN_REALESRGAN_DIR`는 실행 파일과 `models` 폴더를 함께 포함한 디렉터리여야 합니다.
 
 로컬 실행은 현재 Mac의 아키텍처에 맞는 앱을 만들고, GitHub Actions의 `Build macOS packages` 워크플로는 두 아키텍처를 내부적으로 빌드한 뒤 `Tosun Flux-universal.dmg` 하나로 합칩니다. 사용자에게는 universal DMG만 전달하면 됩니다. 현재 Windows 작업 환경에서는 macOS 앱 실행·서명·공증까지 직접 검증할 수 없으며, 배포 전 Apple Developer 서명과 공증을 별도로 적용해야 합니다.
 

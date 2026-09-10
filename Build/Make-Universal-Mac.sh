@@ -68,6 +68,11 @@ lipo -info "$APP_EXECUTABLE" | grep -q 'arm64' || { echo '앱 실행 파일에 a
 lipo -info "$APP_EXECUTABLE" | grep -q 'x86_64' || { echo '앱 실행 파일에 x86_64 아키텍처가 없습니다.' >&2; exit 1; }
 lipo -info "$BACKEND_EXECUTABLE" | grep -q 'arm64' || { echo '백엔드에 arm64 아키텍처가 없습니다.' >&2; exit 1; }
 lipo -info "$BACKEND_EXECUTABLE" | grep -q 'x86_64' || { echo '백엔드에 x86_64 아키텍처가 없습니다.' >&2; exit 1; }
+REAL_ESRGAN_EXECUTABLE="$(find "$UNIVERSAL_APP/Contents/MacOS/backend/TosunFluxBackend" -type f -name 'realesrgan-ncnn-vulkan' -print -quit)"
+[[ -n "$REAL_ESRGAN_EXECUTABLE" ]] || { echo 'Universal 앱에 Real-ESRGAN 실행 파일이 없습니다.' >&2; exit 1; }
+lipo -info "$REAL_ESRGAN_EXECUTABLE" | grep -q 'arm64' || { echo 'Real-ESRGAN에 arm64 아키텍처가 없습니다.' >&2; exit 1; }
+lipo -info "$REAL_ESRGAN_EXECUTABLE" | grep -q 'x86_64' || { echo 'Real-ESRGAN에 x86_64 아키텍처가 없습니다.' >&2; exit 1; }
+chmod +x "$REAL_ESRGAN_EXECUTABLE"
 
 ditto -c -k --sequesterRsrc --keepParent "$UNIVERSAL_APP" "$OUTPUT_ROOT/Tosun Flux-universal.zip"
 if command -v hdiutil >/dev/null 2>&1; then

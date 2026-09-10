@@ -2,7 +2,7 @@
 
 토순의 파일 컨버터입니다. Windows 네이티브 WPF GUI와 로컬 변환 백엔드로 동작합니다.
 
-현재 버전: `v1.0.14`
+현재 버전: `v1.1.0`
 
 라이선스: [MIT License](LICENSE)
 
@@ -33,7 +33,6 @@ packaged                   로컬 패키징 결과, Git 제외
 
 - 이미지: PNG, JPG, WEBP, BMP, TIFF, GIF, PDF
 - PDF: PDF → PNG/JPG, PDF 내부 이미지·구조 최적화
-- 문서: DOCX → TXT/MD, TXT/MD → DOCX
 - 데이터: CSV/TSV ↔ JSON/TXT
 - 영상: MP4, WEBM, MOV, MKV, AVI, GIF
 - 음성: MP3, WAV, FLAC, M4A, OGG
@@ -60,7 +59,7 @@ $env:TOSUN_POPPLER_BIN = 'C:\Tools\poppler\Library\bin'
 .\Build\Make-Installer.ps1
 ```
 
-개발 패키지는 `packaged/Tosun Flux Dev`, 설치 payload는 `packaged/User Install`, 설치기는 `packaged/Installer`, 릴리즈 검증용 로컬 묶음은 `packaged/Tosun Flux`에 생성됩니다. 이 폴더들은 저장소에 커밋하지 않으며 배포 바이너리는 GitHub Release에만 올립니다.
+패키징 중간 결과는 `Build/Intermediate/TosunFluxPackage`, 설치 payload는 `packaged/User Install`, 설치기는 `packaged/Installer`에 생성됩니다. 이 폴더들은 저장소에 커밋하지 않으며 배포 바이너리는 GitHub Release에만 올립니다.
 
 ## 테스트
 

@@ -10,10 +10,11 @@ using System.Windows.Forms;
 internal static class Program
 {
     internal const string ProductName = "Tosun Flux";
-    internal const string ProductVersion = "1.0.14";
+    internal const string ProductVersion = "1.1.0";
     internal const string Publisher = "Tosun Studio";
     internal const string UninstallKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tosun Flux";
     internal const string AppPathKeyPath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Tosun Flux.exe";
+    internal const string ShortcutPreferencesKeyPath = "Software\\Tosun\\Tosun Flux\\Installer";
 
     [STAThread]
     private static void Main(string[] args)
@@ -100,10 +101,7 @@ internal sealed class InstallerForm : Form
         if (InstallerOperations.TryGetInstalledRoot(out var installedRoot, out var installedVersion))
         {
             if (installedVersion != Version.Parse(Program.ProductVersion))
-            {
                 ShowUpdatePage(installedRoot, installedVersion);
-                Shown += async (_, _) => await InstallToPathAsync(installedRoot, false, false);
-            }
             else
             {
                 ShowRepairPage(installedRoot, installedVersion);
@@ -187,8 +185,9 @@ internal sealed class InstallerForm : Form
         _content.Controls.Add(CreateLabel("바로가기", new Point(36, 185), new Size(200, 23), 10, FontStyle.Bold, Ink));
         ConfigureCheckBox(_desktopShortcut, "바탕화면에 Tosun Flux 바로가기 만들기", new Point(39, 216));
         ConfigureCheckBox(_startMenuShortcut, "시작 메뉴에 Tosun Flux 바로가기 만들기", new Point(39, 251));
-        _desktopShortcut.Checked = true;
-        _startMenuShortcut.Checked = true;
+        var shortcutSelection = InstallerOperations.LoadShortcutSelection();
+        _desktopShortcut.Checked = shortcutSelection.Desktop;
+        _startMenuShortcut.Checked = shortcutSelection.StartMenu;
         _content.Controls.Add(_desktopShortcut);
         _content.Controls.Add(_startMenuShortcut);
 
@@ -226,25 +225,38 @@ internal sealed class InstallerForm : Form
         _content.Controls.Clear();
 
         _content.Controls.Add(CreateLabel("업데이트를 시작합니다", new Point(36, 24), new Size(668, 34), 17, FontStyle.Bold, Ink));
-        _content.Controls.Add(CreateLabel($"Tosun Flux v{installedVersion}에서 v{targetVersion}으로 자동 업데이트합니다.", new Point(36, 63), new Size(668, 24), 10, FontStyle.Regular, Muted));
+        _content.Controls.Add(CreateLabel($"Tosun Flux v{installedVersion}에서 v{targetVersion}으로 업데이트합니다.", new Point(36, 63), new Size(668, 24), 10, FontStyle.Regular, Muted));
 
         var installed = new Panel { Location = new Point(36, 112), Size = new Size(668, 76), BackColor = Surface };
         installed.Controls.Add(CreateLabel($"현재 설치 위치  ·  v{installedVersion} → v{targetVersion}", new Point(16, 11), new Size(636, 20), 9, FontStyle.Bold, Muted));
         installed.Controls.Add(CreateLabel(installedRoot, new Point(16, 36), new Size(636, 24), 10, FontStyle.Regular, Ink));
         _content.Controls.Add(installed);
 
-        _status.Location = new Point(36, 232);
+        _content.Controls.Add(CreateLabel("바로가기", new Point(36, 205), new Size(200, 23), 10, FontStyle.Bold, Ink));
+        var shortcutSelection = InstallerOperations.LoadShortcutSelection(installedRoot);
+        ConfigureCheckBox(_desktopShortcut, "바탕화면에 Tosun Flux 바로가기 만들기", new Point(39, 234));
+        ConfigureCheckBox(_startMenuShortcut, "시작 메뉴에 Tosun Flux 바로가기 만들기", new Point(39, 269));
+        _desktopShortcut.Checked = shortcutSelection.Desktop;
+        _startMenuShortcut.Checked = shortcutSelection.StartMenu;
+        _content.Controls.Add(_desktopShortcut);
+        _content.Controls.Add(_startMenuShortcut);
+
+        _status.Location = new Point(36, 309);
         _status.Size = new Size(668, 24);
-        _status.Text = "업데이트를 준비하는 중... 0%";
+        _status.Text = "업데이트할 준비가 되었습니다.";
         _status.ForeColor = Muted;
         _content.Controls.Add(_status);
 
-        _progress.Location = new Point(36, 268);
+        _progress.Location = new Point(36, 344);
         _progress.Size = new Size(668, 14);
         _progress.Style = ProgressBarStyle.Continuous;
         _content.Controls.Add(_progress);
 
-        _content.Controls.Add(CreateLabel("바로가기와 사용자 설정은 그대로 유지됩니다.", new Point(36, 304), new Size(668, 24), 9.5f, FontStyle.Regular, Muted));
+        _installButton.Location = new Point(36, 380);
+        _installButton.Size = new Size(668, 46);
+        ConfigureButton(_installButton, "업데이트", true);
+        _installButton.Click += InstallButtonClicked;
+        _content.Controls.Add(_installButton);
         ResetScrollLayout();
     }
 
@@ -264,17 +276,26 @@ internal sealed class InstallerForm : Form
         installed.Controls.Add(CreateLabel(installedRoot, new Point(16, 36), new Size(636, 24), 10, FontStyle.Regular, Ink));
         _content.Controls.Add(installed);
 
-        var notice = new Panel { Location = new Point(36, 215), Size = new Size(668, 76), BackColor = Surface };
+        _content.Controls.Add(CreateLabel("바로가기", new Point(36, 205), new Size(200, 23), 10, FontStyle.Bold, Ink));
+        var shortcutSelection = InstallerOperations.LoadShortcutSelection(installedRoot);
+        ConfigureCheckBox(_desktopShortcut, "바탕화면에 Tosun Flux 바로가기 만들기", new Point(39, 234));
+        ConfigureCheckBox(_startMenuShortcut, "시작 메뉴에 Tosun Flux 바로가기 만들기", new Point(39, 269));
+        _desktopShortcut.Checked = shortcutSelection.Desktop;
+        _startMenuShortcut.Checked = shortcutSelection.StartMenu;
+        _content.Controls.Add(_desktopShortcut);
+        _content.Controls.Add(_startMenuShortcut);
+
+        var notice = new Panel { Location = new Point(36, 304), Size = new Size(668, 76), BackColor = Surface };
         notice.Controls.Add(CreateLabel("복구는 앱과 백엔드 파일만 다시 적용합니다.", new Point(16, 13), new Size(636, 22), 9.5f, FontStyle.Bold, Ink));
         notice.Controls.Add(CreateLabel("제거는 Windows 설정의 설치된 앱에서 실행할 수 있습니다.", new Point(16, 40), new Size(636, 20), 9, FontStyle.Regular, Muted));
         _content.Controls.Add(notice);
 
-        var repairButton = new Button { Location = new Point(36, 324), Size = new Size(668, 48) };
+        var repairButton = new Button { Location = new Point(36, 397), Size = new Size(668, 48) };
         ConfigureButton(repairButton, "복구", true);
         repairButton.Click += RepairButtonClicked;
         _content.Controls.Add(repairButton);
 
-        var cancelButton = new Button { Location = new Point(36, 397), Size = new Size(668, 48) };
+        var cancelButton = new Button { Location = new Point(36, 457), Size = new Size(668, 48) };
         ConfigureButton(cancelButton, "취소", false);
         cancelButton.Click += (_, _) => Close();
         _content.Controls.Add(cancelButton);
@@ -294,7 +315,8 @@ internal sealed class InstallerForm : Form
 
     private async void InstallButtonClicked(object? sender, EventArgs e)
     {
-        if (!TryGetInstallRoot(out var installRoot))
+        var installRoot = _installedRoot;
+        if (!_isMaintenanceOperation && !TryGetInstallRoot(out installRoot))
             return;
 
         await InstallToPathAsync(installRoot, _desktopShortcut.Checked, _startMenuShortcut.Checked);
@@ -302,7 +324,7 @@ internal sealed class InstallerForm : Form
 
     private async void RepairButtonClicked(object? sender, EventArgs e)
     {
-        await InstallToPathAsync(_installedRoot, false, false);
+        await InstallToPathAsync(_installedRoot, _desktopShortcut.Checked, _startMenuShortcut.Checked);
     }
 
     private async Task InstallToPathAsync(string installRoot, bool createDesktopShortcut, bool createStartMenuShortcut)
@@ -380,22 +402,11 @@ internal sealed class InstallerForm : Form
         installed.Controls.Add(CreateLabel(_installedRoot, new Point(16, 34), new Size(636, 24), 10, FontStyle.Regular, Ink));
         _content.Controls.Add(installed);
 
-        _content.Controls.Add(CreateLabel("바로가기", new Point(36, 211), new Size(200, 23), 10, FontStyle.Bold, Ink));
-        var desktopButton = new Button { Location = new Point(36, 242), Size = new Size(321, 44) };
-        var startButton = new Button { Location = new Point(383, 242), Size = new Size(321, 44) };
-        ConfigureButton(desktopButton, _installResult.DesktopShortcutCreated ? "바탕화면 바로가기 생성됨" : "바탕화면 바로가기 만들기", false);
-        ConfigureButton(startButton, _installResult.StartMenuShortcutCreated ? "시작 메뉴 바로가기 생성됨" : "시작 메뉴 바로가기 만들기", false);
-        desktopButton.Enabled = !_installResult.DesktopShortcutCreated;
-        startButton.Enabled = !_installResult.StartMenuShortcutCreated;
-        desktopButton.Click += (_, _) => CreateDesktopShortcut(desktopButton);
-        startButton.Click += (_, _) => CreateStartMenuShortcut(startButton);
-        _content.Controls.Add(desktopButton);
-        _content.Controls.Add(startButton);
+        _content.Controls.Add(CreateLabel($"바로가기 설정  ·  {FormatShortcutSelection(_installResult)}", new Point(36, 211), new Size(668, 30), 9.5f, FontStyle.Regular, Muted));
+        _content.Controls.Add(CreateLabel("Windows 설정의 설치된 앱과 제어판의 프로그램 제거 목록에서 Tosun Flux를 제거할 수 있습니다.", new Point(36, 255), new Size(668, 48), 9.5f, FontStyle.Regular, Muted));
 
-        _content.Controls.Add(CreateLabel("Windows 설정의 설치된 앱과 제어판의 프로그램 제거 목록에서 Tosun Flux를 제거할 수 있습니다.", new Point(36, 316), new Size(668, 48), 9.5f, FontStyle.Regular, Muted));
-
-        var closeButton = new Button { Location = new Point(36, 418), Size = new Size(321, 50) };
-        var launchButton = new Button { Location = new Point(383, 418), Size = new Size(321, 50) };
+        var closeButton = new Button { Location = new Point(36, 350), Size = new Size(321, 50) };
+        var launchButton = new Button { Location = new Point(383, 350), Size = new Size(321, 50) };
         ConfigureButton(closeButton, "닫기", false);
         ConfigureButton(launchButton, "Tosun Flux 실행", true);
         closeButton.Click += (_, _) => Close();
@@ -418,7 +429,7 @@ internal sealed class InstallerForm : Form
         installed.Controls.Add(CreateLabel(_installedRoot, new Point(16, 34), new Size(636, 24), 10, FontStyle.Regular, Ink));
         _content.Controls.Add(installed);
 
-        _content.Controls.Add(CreateLabel("바로가기와 사용자 설정은 변경하지 않았습니다.", new Point(36, 215), new Size(668, 30), 9.5f, FontStyle.Regular, Muted));
+        _content.Controls.Add(CreateLabel($"바로가기 설정  ·  {FormatShortcutSelection(_installResult)}", new Point(36, 215), new Size(668, 30), 9.5f, FontStyle.Regular, Muted));
 
         var closeButton = new Button { Location = new Point(36, 286), Size = new Size(321, 50) };
         var launchButton = new Button { Location = new Point(383, 286), Size = new Size(321, 50) };
@@ -431,32 +442,14 @@ internal sealed class InstallerForm : Form
         ResetScrollLayout();
     }
 
-    private void CreateDesktopShortcut(Button button)
+    private static string FormatShortcutSelection(InstallResult result)
     {
-        try
-        {
-            InstallerOperations.CreateDesktopShortcut(_installedRoot);
-            button.Text = "바탕화면 바로가기 생성됨";
-            button.Enabled = false;
-        }
-        catch (Exception error)
-        {
-            MessageBox.Show(this, error.Message, Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
-
-    private void CreateStartMenuShortcut(Button button)
-    {
-        try
-        {
-            InstallerOperations.CreateStartMenuShortcut(_installedRoot);
-            button.Text = "시작 메뉴 바로가기 생성됨";
-            button.Enabled = false;
-        }
-        catch (Exception error)
-        {
-            MessageBox.Show(this, error.Message, Program.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+        var selected = new List<string>();
+        if (result.DesktopShortcutCreated)
+            selected.Add("바탕화면");
+        if (result.StartMenuShortcutCreated)
+            selected.Add("시작 메뉴");
+        return selected.Count == 0 ? "사용 안 함" : string.Join(" · ", selected);
     }
 
     private void LaunchInstalledApplication()
@@ -514,6 +507,7 @@ internal sealed class InstallerForm : Form
 
 internal readonly record struct InstallOptions(string InstallRoot, bool CreateDesktopShortcut, bool CreateStartMenuShortcut);
 internal readonly record struct InstallResult(bool DesktopShortcutCreated, bool StartMenuShortcutCreated);
+internal readonly record struct ShortcutSelection(bool Desktop, bool StartMenu);
 internal readonly record struct InstallProgress(int Percent, string Message);
 
 internal static class InstallerOperations
@@ -542,6 +536,34 @@ internal static class InstallerOperations
         return key?.GetValue("InstallLocation") as string is { Length: > 0 } installedPath
             ? installedPath
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Program.ProductName);
+    }
+
+    public static ShortcutSelection LoadShortcutSelection(string? installedRoot = null)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(Program.ShortcutPreferencesKeyPath);
+        var desktop = ReadShortcutPreference(key, "DesktopShortcut");
+        var startMenu = ReadShortcutPreference(key, "StartMenuShortcut");
+        var detected = installedRoot is null ? new ShortcutSelection(true, true) : DetectShortcutSelection(installedRoot);
+        return new ShortcutSelection(desktop ?? detected.Desktop, startMenu ?? detected.StartMenu);
+    }
+
+    private static bool? ReadShortcutPreference(RegistryKey? key, string valueName)
+    {
+        return key?.GetValue(valueName) is int value ? value != 0 : null;
+    }
+
+    private static ShortcutSelection DetectShortcutSelection(string installedRoot)
+    {
+        var desktopPath = Path.Combine(GetDesktopDirectory(), "Tosun Flux.lnk");
+        var startMenuPath = Path.Combine(GetStartMenuFolder(), "Tosun Flux.lnk");
+        return new ShortcutSelection(File.Exists(desktopPath), File.Exists(startMenuPath));
+    }
+
+    public static void SaveShortcutSelection(ShortcutSelection selection)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(Program.ShortcutPreferencesKeyPath);
+        key?.SetValue("DesktopShortcut", selection.Desktop ? 1 : 0, RegistryValueKind.DWord);
+        key?.SetValue("StartMenuShortcut", selection.StartMenu ? 1 : 0, RegistryValueKind.DWord);
     }
 
     public static InstallResult Install(InstallOptions options, IProgress<InstallProgress> progress)
@@ -580,6 +602,14 @@ internal static class InstallerOperations
                 CreateStartMenuShortcut(options.InstallRoot);
                 startMenuCreated = true;
             }
+            else
+            {
+                DeleteFile(Path.Combine(GetStartMenuFolder(), "Tosun Flux.lnk"));
+            }
+            if (!options.CreateDesktopShortcut)
+                DeleteFile(Path.Combine(GetDesktopDirectory(), "Tosun Flux.lnk"));
+
+            SaveShortcutSelection(new ShortcutSelection(options.CreateDesktopShortcut, options.CreateStartMenuShortcut));
 
             progress.Report(new InstallProgress(100, "설치가 완료되었습니다."));
             return new InstallResult(desktopCreated, startMenuCreated);

@@ -22,6 +22,10 @@ class ConverterTests(unittest.TestCase):
         self.assertIn("jpg-sequence", supported_targets(Path("clip.mov")))
         self.assertIn("pdf", supported_targets(Path("document.pdf")))
 
+    def test_document_extensions_are_not_supported(self) -> None:
+        for suffix in (".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".hwp", ".hwpx"):
+            self.assertEqual(supported_targets(Path(f"document{suffix}")), ())
+
     def test_resolution_and_aspect_dimensions(self) -> None:
         options = ConversionOptions(resolution="fhd", aspect="9:16")
         self.assertEqual(target_dimensions((4000, 3000), options), (1080, 1920))

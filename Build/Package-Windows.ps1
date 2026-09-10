@@ -19,7 +19,7 @@ $python = Resolve-Executable $Python 'python'
 $ffmpeg = Resolve-Executable $Ffmpeg 'ffmpeg'
 if ([string]::IsNullOrWhiteSpace($PopplerBin)) { throw 'Poppler 경로가 없습니다. -PopplerBin 또는 TOSUN_POPPLER_BIN을 지정하세요.' }
 $popplerBin = (Resolve-Path -LiteralPath $PopplerBin).Path
-$packageRoot = Join-Path $projectRoot 'packaged\Tosun Flux Dev'
+$packageRoot = Join-Path $projectRoot 'Build\Intermediate\TosunFluxPackage'
 $backendBuildRoot = Join-Path $projectRoot 'Build\Intermediate\TosunFluxBackend'
 $backendDistRoot = Join-Path $packageRoot 'backend'
 $wpfProject = Join-Path $projectRoot 'Source\TosunFlux\TosunFlux.csproj'
@@ -33,11 +33,12 @@ New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 dotnet publish $wpfProject -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o $packageRoot
 if ($LASTEXITCODE -ne 0) { throw "WPF publish failed with exit code $LASTEXITCODE" }
 $binaryArgs = @('--add-binary', "$ffmpeg;vendor")
+$dataArgs = @()
 Get-ChildItem -LiteralPath $popplerBin -File | ForEach-Object {
     $binaryArgs += '--add-binary'
     $binaryArgs += "$($_.FullName);vendor"
 }
-& $python -m PyInstaller --noconfirm --clean --onedir --console --name 'TosunFluxBackend' --distpath $backendDistRoot --workpath $backendBuildRoot --specpath $backendBuildRoot --exclude-module numpy --exclude-module scipy @binaryArgs $backendEntry
+& $python -m PyInstaller --noconfirm --clean --onedir --console --name 'TosunFluxBackend' --distpath $backendDistRoot --workpath $backendBuildRoot --specpath $backendBuildRoot --exclude-module numpy --exclude-module scipy @binaryArgs @dataArgs $backendEntry
 if ($LASTEXITCODE -ne 0) { throw "Backend packaging failed with exit code $LASTEXITCODE" }
 $backendInternalRoot = Join-Path $backendDistRoot 'TosunFluxBackend\_internal'
 $popplerOnlyDuplicates = @('icudt78.dll', 'icuin78.dll', 'icuuc78.dll', 'icutu78.dll', 'poppler.dll')
@@ -53,7 +54,7 @@ $readme = @"
 
 토순의 파일 컨버터
 
-버전: v1.0.14
+버전: v1.1.0
 
 실행 파일: Tosun Flux.exe
 "@

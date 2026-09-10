@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private const string OutputPathValueName = "OutputPath";
     private readonly List<string> _files = [];
     private readonly System.Windows.Forms.NotifyIcon _trayIcon;
+    private readonly System.Windows.Threading.DispatcherTimer _tosunSpeechTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private UpdateInfo? _availableUpdate;
     private bool _allowClose;
     private bool _syncingCustomSizeFields;
@@ -40,6 +41,11 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _tosunSpeechTimer.Tick += (_, _) =>
+        {
+            TosunSpeechBubble.Visibility = Visibility.Collapsed;
+            _tosunSpeechTimer.Stop();
+        };
         OptimizationBox.ItemsSource = new[] { "원본 유지", "품질 우선", "균형", "용량 우선" };
         ResolutionBox.ItemsSource = new[] { "원본", "4K", "4K UHD", "QHD", "FHD", "HD", "SD", "직접 지정" };
         AspectBox.ItemsSource = new[] { "원본", "16:9", "9:16", "1:1", "4:3", "3:4" };
@@ -51,7 +57,6 @@ public partial class MainWindow : Window
         OutputPath.Text = LoadOutputPath();
         _trayIcon = CreateTrayIcon();
         Closing += MainWindow_Closing;
-        StateChanged += MainWindow_StateChanged;
         Closed += MainWindow_Closed;
         Loaded += MainWindow_Loaded;
         SourceInitialized += (_, _) => EnableAcrylic();
@@ -83,12 +88,6 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         Hide();
-    }
-
-    private void MainWindow_StateChanged(object? sender, EventArgs e)
-    {
-        if (WindowState == WindowState.Minimized)
-            Hide();
     }
 
     private void MainWindow_Closed(object? sender, EventArgs e)
@@ -142,6 +141,14 @@ public partial class MainWindow : Window
     private void Window_DragOver(object sender, System.Windows.DragEventArgs e)
     {
         e.Effects = e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void TosunMascot_Click(object sender, MouseButtonEventArgs e)
+    {
+        TosunSpeechBubble.Visibility = Visibility.Visible;
+        _tosunSpeechTimer.Stop();
+        _tosunSpeechTimer.Start();
         e.Handled = true;
     }
 
@@ -803,7 +810,7 @@ public partial class MainWindow : Window
         AddHelpSection(guideStack, "이미지", "PNG · JPG/JPEG · WEBP · BMP · TIFF · GIF → PNG, JPG, WEBP, BMP, TIFF, GIF, PDF");
         AddHelpSection(guideStack, "PDF", "PDF → PNG, JPG, PDF\nPDF 최적화는 텍스트를 유지하면서 내부 이미지와 구조를 줄입니다.");
         AddHelpSection(guideStack, "영상", "MP4 · WEBM · MOV · MKV · AVI · GIF → MP4, WEBM, MOV, MKV, AVI, GIF\n영상 → .png Sequence 또는 .jpg Sequence로 프레임을 추출할 수 있습니다.");
-        AddHelpSection(guideStack, "문서 · 데이터 · 음성", "DOCX → TXT/MD · TXT/MD → DOCX · CSV/TSV/JSON 상호 변환\nMP3 · WAV · FLAC · M4A · OGG 형식 간 변환");
+        AddHelpSection(guideStack, "데이터 · 음성", "CSV/TSV/JSON 상호 변환\nMP3 · WAV · FLAC · M4A · OGG 형식 간 변환");
         AddHelpSection(guideStack, "출력 설정", "해상도·화면비·맞춤 방식·프레임 변환은 가능한 파일에서만 표시됩니다. 원본 설정과 같은 형식은 원본을 그대로 저장하며, 예상 용량은 완료 후 실제 결과 용량으로 바뀝니다.");
 
         var guideSurface = new Border

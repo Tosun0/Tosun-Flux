@@ -17,12 +17,6 @@ try:
 except ImportError:  # pragma: no cover - packaging/runtime guard
     PdfReader = PdfWriter = None
 
-try:
-    from docx import Document
-except ImportError:  # pragma: no cover - packaging/runtime guard
-    Document = None
-
-
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".flv", ".m4v", ".gif"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma"}
@@ -122,8 +116,6 @@ def file_kind(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         return "pdf"
-    if suffix == ".docx":
-        return "docx"
     if suffix in AUDIO_EXTENSIONS:
         return "audio"
     if suffix in VIDEO_EXTENSIONS and suffix != ".gif":
@@ -141,15 +133,13 @@ def supported_targets(path: Path) -> tuple[str, ...]:
         return ("png", "jpg", "webp", "bmp", "tiff", "gif", "pdf")
     if kind == "pdf":
         return ("png", "jpg", "pdf")
-    if kind == "docx":
-        return ("txt", "md")
     if kind == "text":
         suffix = path.suffix.lower()
         if suffix in {".csv", ".tsv"}:
             return ("csv", "json", "txt")
         if suffix == ".json":
             return ("json", "csv", "txt")
-        return ("txt", "md", "docx")
+        return ("txt", "md")
     if kind == "video":
         return ("mp4", "webm", "mov", "mkv", "avi", "gif", "png-sequence", "jpg-sequence")
     if kind == "audio":
@@ -164,7 +154,7 @@ def common_targets(paths: Iterable[Path]) -> tuple[str, ...]:
     common = set(supported_targets(items[0]))
     for path in items[1:]:
         common &= set(supported_targets(path))
-    order = ("png", "jpg", "webp", "bmp", "tiff", "gif", "pdf", "txt", "md", "csv", "json", "docx", "mp4", "webm", "mov", "mkv", "avi", "png-sequence", "jpg-sequence", "mp3", "wav", "flac", "m4a", "ogg")
+    order = ("png", "jpg", "webp", "bmp", "tiff", "gif", "pdf", "txt", "md", "csv", "json", "mp4", "webm", "mov", "mkv", "avi", "png-sequence", "jpg-sequence", "mp3", "wav", "flac", "m4a", "ogg")
     return tuple(target for target in order if target in common)
 
 
@@ -418,16 +408,6 @@ def _convert_media(source: Path, output_dir: Path, target: str, options: Convers
     return ConversionResult(source, (destination,))
 
 
-def _convert_docx(source: Path, output_dir: Path, target: str) -> ConversionResult:
-    if Document is None:
-        raise ConversionError("DOCX 변환 모듈을 찾을 수 없습니다.")
-    document = Document(source)
-    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
-    destination = unique_output(output_dir, source.stem, target)
-    destination.write_text(text, encoding="utf-8")
-    return ConversionResult(source, (destination,))
-
-
 def _text_rows(source: Path) -> list[dict[str, str]]:
     delimiter = "\t" if source.suffix.lower() == ".tsv" else ","
     with source.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -437,14 +417,6 @@ def _text_rows(source: Path) -> list[dict[str, str]]:
 def _convert_text(source: Path, output_dir: Path, target: str) -> ConversionResult:
     destination = unique_output(output_dir, source.stem, target)
     suffix = source.suffix.lower()
-    if target == "docx":
-        if Document is None:
-            raise ConversionError("DOCX 변환 모듈을 찾을 수 없습니다.")
-        document = Document()
-        for line in _read_text(source).splitlines() or [""]:
-            document.add_paragraph(line)
-        document.save(destination)
-        return ConversionResult(source, (destination,))
     if target in {"txt", "md"}:
         if suffix in {".csv", ".tsv"}:
             rows = _text_rows(source)
@@ -501,8 +473,6 @@ def convert_file(source: Path, output_dir: Path, target: str, options: Conversio
         return _convert_image(source, output_dir, target, options)
     if kind == "pdf":
         return _convert_pdf(source, output_dir, target, options)
-    if kind == "docx":
-        return _convert_docx(source, output_dir, target)
     if kind == "text":
         return _convert_text(source, output_dir, target)
     if kind in {"video", "audio"}:

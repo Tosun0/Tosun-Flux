@@ -219,8 +219,14 @@
                     <Button x:Name="UpdateButton" Visibility="Collapsed" Content="업데이트" Padding="14,9" Margin="8,0,12,0" Click="UpdateButton_Click" />
                     <Button x:Name="HelpButton" Content="?" Width="34" Height="34" Margin="20,0,0,0" Padding="0" FontSize="17" FontWeight="Black" Background="{StaticResource SecondaryBrush}" Foreground="{StaticResource SecondaryTextBrush}" ToolTip="변환 형식 도움말" Click="HelpButton_Click" />
                 </StackPanel>
-                <Image Grid.Column="2" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <TextBlock Grid.ColumnSpan="3" Text="dev v1.0.14." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
+                <Grid Grid.Column="2" Width="160" Height="96" HorizontalAlignment="Center" VerticalAlignment="Center" Panel.ZIndex="2">
+                    <Image x:Name="TosunMascot" Source="pack://application:,,,/Assets/tosun-floating-v1.png" Height="92" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Cursor="Hand" ToolTip="토순이를 눌러 보세요" MouseLeftButtonUp="TosunMascot_Click" />
+                    <Border x:Name="TosunSpeechBubble" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-8,-8,0" Padding="12,7" Background="{StaticResource StrongGlassBrush}" CornerRadius="15" Panel.ZIndex="1">
+                        <Border.Effect><DropShadowEffect Color="#000000" BlurRadius="14" ShadowDepth="4" Opacity="0.35" /></Border.Effect>
+                        <TextBlock Text="토순토순" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                    </Border>
+                </Grid>
+                <TextBlock Grid.ColumnSpan="3" Text="dev v1.1.0." HorizontalAlignment="Right" VerticalAlignment="Top" TextAlignment="Right" Margin="0,2,4,0" FontSize="10" FontWeight="Light" Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False" Panel.ZIndex="1" />
             </Grid>
 
             <Grid x:Name="WorkspaceGrid" Grid.Row="2">

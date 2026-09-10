@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Tosun Flux</AssemblyName>
+    <RootNamespace>TosunFluxMac</RootNamespace>
+    <Company>Tosun Studio</Company>
+    <Authors>Tosun</Authors>
+    <Product>Tosun Flux</Product>
+    <Description>토순의 파일 컨버터 macOS edition</Description>
+    <Version>1.1.0</Version>
+    <InformationalVersion>1.1.0</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.21" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.21" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.21" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\Content\TosunFlux\tosun-floating-v1.png" Link="Assets\tosun-floating-v1.png" />
+    <AvaloniaResource Include="..\..\Content\TosunFlux\Pretendard.ttf" Link="Assets\Pretendard.ttf" />
+  </ItemGroup>
+</Project>

@@ -9,6 +9,7 @@
 저작권 표기: © 2026 Tosun Studio. All rights reserved.
 
 - Windows Acrylic 글래스 배경과 Per-Monitor V2 DPI 대응
+- macOS Avalonia GUI와 `.app`/`.dmg` 패키징 경로
 - 파일 드래그 앤 드롭 및 파일별 삭제
 - 이미지·영상·PDF 최적화
 - 해상도(4K UHD·4K·QHD·FHD·HD·SD)·화면비·맞춤 방식·직접 픽셀 지정
@@ -22,6 +23,7 @@
 ```text
 Content/TosunFlux          아이콘, 토순 이미지, Pretendard 폰트
 Source/TosunFlux           WPF 앱
+Source/TosunFluxMac        macOS용 Avalonia GUI
 Source/TosunFluxBackend    변환 엔진과 CLI
 Source/TosunFluxInstaller  Windows 설치기
 Build                      Windows 패키징 스크립트와 중간 산출물
@@ -60,6 +62,17 @@ $env:TOSUN_POPPLER_BIN = 'C:\Tools\poppler\Library\bin'
 ```
 
 패키징 중간 결과는 `Build/Intermediate/TosunFluxPackage`, 설치 payload는 `packaged/User Install`, 설치기는 `packaged/Installer`에 생성됩니다. 이 폴더들은 저장소에 커밋하지 않으며 배포 바이너리는 GitHub Release에만 올립니다.
+
+## macOS 패키징
+
+macOS GUI는 기존 변환 백엔드를 그대로 사용하며 Apple Silicon과 Intel용 앱 번들을 각각 만들 수 있습니다. macOS에서 Python, PyInstaller, FFmpeg, Poppler, .NET 8 SDK를 준비한 뒤 실행합니다.
+
+```bash
+chmod +x ./Build/Package-Mac.sh
+./Build/Package-Mac.sh
+```
+
+로컬 실행은 현재 Mac의 아키텍처에 맞는 앱을 만들고, GitHub Actions의 `Build macOS packages` 워크플로는 두 아키텍처를 내부적으로 빌드한 뒤 `Tosun Flux-universal.dmg` 하나로 합칩니다. 사용자에게는 universal DMG만 전달하면 됩니다. 현재 Windows 작업 환경에서는 macOS 앱 실행·서명·공증까지 직접 검증할 수 없으며, 배포 전 Apple Developer 서명과 공증을 별도로 적용해야 합니다.
 
 ## 테스트
 

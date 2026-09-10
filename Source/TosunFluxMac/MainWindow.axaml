@@ -1,0 +1,158 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TosunFluxMac.MainWindow"
+        Title="Tosun Flux"
+        Width="1280"
+        Height="820"
+        MinWidth="1100"
+        MinHeight="720"
+        Background="#0B0E16"
+        FontFamily="avares://TosunFluxMac/Assets/Pretendard.ttf#Pretendard">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="28">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,0,8,24">
+      <StackPanel Spacing="7">
+        <TextBlock Text="TOSUN FLUX" FontSize="34" FontWeight="Black" Foreground="#F7F8FF" />
+        <TextBlock Text="토순의 파일 컨버터  ·  파일을 넣고 형식을 골라 변환하세요" FontSize="15" Foreground="#9BA4BC" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Spacing="4">
+        <Image Source="avares://TosunFluxMac/Assets/tosun-floating-v1.png" Width="74" Height="98" Stretch="Uniform" />
+        <TextBlock Text="macOS edition" HorizontalAlignment="Center" FontSize="11" Foreground="#737D99" />
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="1" ColumnDefinitions="1.18*,0.82*" ColumnSpacing="18">
+      <Border Grid.Column="0" Background="#151923" BorderBrush="#242A39" BorderThickness="1" CornerRadius="26" Padding="26">
+        <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="16">
+          <TextBlock Text="변환할 파일" FontSize="21" FontWeight="Bold" Foreground="#F4F6FF" />
+          <Border Grid.Row="1" Height="128" Background="#0F131C" BorderBrush="#30384C" BorderThickness="1" CornerRadius="20" Padding="20"
+                  DragDrop.AllowDrop="True" DragDrop.DragOver="DropZoneDragOver" DragDrop.Drop="DropZoneDrop">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
+              <TextBlock Text="파일을 여기로 끌어다 놓으세요" HorizontalAlignment="Center" FontSize="18" FontWeight="Bold" Foreground="#EEF1FF" />
+              <TextBlock Text="또는 아래 버튼으로 여러 파일을 선택합니다" HorizontalAlignment="Center" FontSize="13" Foreground="#8992AA" />
+            </StackPanel>
+          </Border>
+          <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Button Classes="primary" Content="파일 추가" Click="AddFilesClick" />
+              <Button Classes="ghost" Content="전체 비우기" Click="ClearFilesClick" />
+            </StackPanel>
+            <Border Grid.Row="1" Background="#10141D" BorderBrush="#202738" BorderThickness="1" CornerRadius="18" Padding="14">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Files}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                        <StackPanel Spacing="2">
+                          <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="#EDF0FB" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="#737D97" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="×" Tag="{Binding}" Classes="ghost" Padding="8,3" FontSize="18" Click="RemoveFileClick" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Border>
+          </Grid>
+          <TextBlock Grid.Row="3" Text="{Binding FileSummary}" FontSize="13" Foreground="#929BB4" />
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1" Background="#151923" BorderBrush="#242A39" BorderThickness="1" CornerRadius="26" Padding="26">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="10">
+          <TextBlock Text="변환 설정" FontSize="21" FontWeight="Bold" Foreground="#F4F6FF" Margin="0,0,0,8" />
+          <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
+            <StackPanel Spacing="6">
+              <TextBlock Text="출력 형식" FontSize="12" Foreground="#8992AA" />
+              <ComboBox x:Name="TargetCombo" SelectionChanged="TargetChanged" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="6">
+              <TextBlock Text="최적화" FontSize="12" Foreground="#8992AA" />
+              <ComboBox x:Name="OptimizeCombo" SelectedIndex="0">
+                <ComboBoxItem Content="원본 유지" Tag="source" />
+                <ComboBoxItem Content="고품질" Tag="quality" />
+                <ComboBoxItem Content="균형" Tag="balanced" />
+                <ComboBoxItem Content="작은 용량" Tag="small" />
+              </ComboBox>
+            </StackPanel>
+          </Grid>
+          <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="12">
+            <StackPanel Spacing="6">
+              <TextBlock Text="해상도" FontSize="12" Foreground="#8992AA" />
+              <ComboBox x:Name="ResolutionCombo" SelectionChanged="ResolutionChanged">
+                <ComboBoxItem Content="원본" Tag="source" />
+                <ComboBoxItem Content="4K UHD" Tag="4k-uhd" />
+                <ComboBoxItem Content="4K" Tag="4k" />
+                <ComboBoxItem Content="QHD" Tag="qhd" />
+                <ComboBoxItem Content="FHD" Tag="fhd" />
+                <ComboBoxItem Content="HD" Tag="hd" />
+                <ComboBoxItem Content="SD" Tag="sd" />
+                <ComboBoxItem Content="직접 지정" Tag="custom" />
+              </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="6">
+              <TextBlock Text="화면비" FontSize="12" Foreground="#8992AA" />
+              <ComboBox x:Name="AspectCombo" SelectedIndex="0">
+                <ComboBoxItem Content="원본" Tag="source" />
+                <ComboBoxItem Content="16:9" Tag="16:9" />
+                <ComboBoxItem Content="9:16" Tag="9:16" />
+                <ComboBoxItem Content="1:1" Tag="1:1" />
+                <ComboBoxItem Content="4:3" Tag="4:3" />
+                <ComboBoxItem Content="3:4" Tag="3:4" />
+              </ComboBox>
+            </StackPanel>
+          </Grid>
+          <Grid Grid.Row="3" x:Name="CustomResolutionRow" ColumnDefinitions="*,Auto,*" ColumnSpacing="8" IsVisible="False">
+            <TextBox x:Name="WidthBox" Watermark="가로" Text="1920" />
+            <TextBlock Grid.Column="1" Text="×" VerticalAlignment="Center" FontSize="18" Foreground="#8992AA" />
+            <TextBox Grid.Column="2" x:Name="HeightBox" Watermark="세로" Text="1080" />
+          </Grid>
+          <Grid Grid.Row="4" ColumnDefinitions="*,*" ColumnSpacing="12">
+            <StackPanel Spacing="6">
+              <TextBlock Text="맞춤 방식" FontSize="12" Foreground="#8992AA" />
+              <ComboBox x:Name="FitCombo" SelectedIndex="0">
+                <ComboBoxItem Content="맞추기" Tag="fit" />
+                <ComboBoxItem Content="채우기" Tag="fill" />
+                <ComboBoxItem Content="늘리기" Tag="stretch" />
+              </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="1" x:Name="FpsPanel" Spacing="6">
+              <TextBlock Text="프레임 변환" FontSize="12" Foreground="#8992AA" />
+              <ComboBox x:Name="FpsCombo" SelectedIndex="0">
+                <ComboBoxItem Content="원본" Tag="source" />
+                <ComboBoxItem Content="23.976" Tag="23.976" />
+                <ComboBoxItem Content="24" Tag="24" />
+                <ComboBoxItem Content="25" Tag="25" />
+                <ComboBoxItem Content="29.97" Tag="29.97" />
+                <ComboBoxItem Content="30" Tag="30" />
+                <ComboBoxItem Content="50" Tag="50" />
+                <ComboBoxItem Content="59.94" Tag="59.94" />
+                <ComboBoxItem Content="60" Tag="60" />
+              </ComboBox>
+            </StackPanel>
+          </Grid>
+          <StackPanel Grid.Row="5" Spacing="6">
+            <TextBlock Text="저장 위치" FontSize="12" Foreground="#8992AA" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+              <TextBox x:Name="OutputPathBox" IsReadOnly="True" />
+              <Button Grid.Column="1" Classes="primary" Content="폴더 선택" Click="ChooseOutputClick" />
+            </Grid>
+          </StackPanel>
+          <Border Grid.Row="6" Background="#10141D" CornerRadius="14" Padding="14" VerticalAlignment="Bottom">
+            <StackPanel Spacing="4">
+              <TextBlock Text="상태" FontSize="12" Foreground="#8992AA" />
+              <TextBlock x:Name="StatusText" Text="파일을 추가하면 변환할 수 있습니다." FontSize="13" Foreground="#DCE1F0" TextWrapping="Wrap" />
+              <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="1" Height="6" IsVisible="False" Margin="0,6,0,0" />
+            </StackPanel>
+          </Border>
+          <Button Grid.Row="7" Classes="primary" Content="변환 시작" Height="54" HorizontalContentAlignment="Center" Click="ConvertClick" />
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="8,18,8,0">
+      <TextBlock Text="지원 형식: 이미지 · 영상 · PDF · 텍스트 · 음성" FontSize="12" Foreground="#737D99" VerticalAlignment="Center" />
+      <TextBlock Grid.Column="1" Text="v1.1.0  ·  © 2026 Tosun Studio" FontSize="12" Foreground="#737D99" />
+    </Grid>
+  </Grid>
+</Window>

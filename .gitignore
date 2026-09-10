@@ -3,6 +3,9 @@
 /Build/Intermediate/
 /Source/TosunFlux/bin/
 /Source/TosunFlux/obj/
+/Source/TosunFluxMac/bin/
+/Source/TosunFluxMac/obj/
+/Source/TosunFluxMac/Build/
 /Source/TosunFluxInstaller/bin/
 /Source/TosunFluxInstaller/obj/
 

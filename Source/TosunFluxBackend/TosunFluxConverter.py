@@ -69,8 +69,15 @@ def app_root() -> Path:
 
 
 def bundled_tool(name: str, system_name: str | None = None) -> Path | None:
-    candidates = [app_root() / "vendor" / name]
-    found = shutil.which(system_name or name)
+    tool_name = Path(name).name
+    base_name = tool_name[:-4] if tool_name.lower().endswith(".exe") else tool_name
+    vendor_names = [tool_name]
+    if base_name != tool_name:
+        vendor_names.append(base_name)
+    elif sys.platform == "win32":
+        vendor_names.append(f"{base_name}.exe")
+    candidates = [app_root() / "vendor" / vendor_name for vendor_name in vendor_names]
+    found = shutil.which(system_name or base_name)
     if found:
         candidates.append(Path(found))
     return next((candidate for candidate in candidates if candidate.exists()), None)
@@ -86,7 +93,7 @@ def source_metadata(path: Path) -> dict[str, object]:
 
         if metadata["kind"] != "video":
             return metadata
-        tool = bundled_tool("ffmpeg.exe", "ffmpeg")
+        tool = bundled_tool("ffmpeg", "ffmpeg")
         if tool is None:
             return metadata
         completed = subprocess.run(
@@ -318,7 +325,7 @@ def _convert_pdf(source: Path, output_dir: Path, target: str, options: Conversio
             shutil.copy2(source, destination)
         return ConversionResult(source, (destination,))
 
-    tool = bundled_tool("pdftoppm.exe", "pdftoppm")
+    tool = bundled_tool("pdftoppm", "pdftoppm")
     if tool is None:
         raise ConversionError("PDF 렌더러(pdftoppm)를 찾을 수 없습니다.")
     output_stem = unique_output(output_dir, source.stem, target).with_suffix("")
@@ -359,7 +366,7 @@ def _video_filter(options: ConversionOptions, source_size: tuple[int, int] = (19
 
 
 def _convert_media(source: Path, output_dir: Path, target: str, options: ConversionOptions) -> ConversionResult:
-    tool = bundled_tool("ffmpeg.exe", "ffmpeg")
+    tool = bundled_tool("ffmpeg", "ffmpeg")
     if tool is None:
         raise ConversionError("FFmpeg를 찾을 수 없습니다.")
     args = [str(tool), "-hide_banner", "-loglevel", "error", "-y", "-i", str(source)]

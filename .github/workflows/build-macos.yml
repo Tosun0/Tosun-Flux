@@ -1,0 +1,87 @@
+name: Build macOS packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: ${{ matrix.runtime }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: osx-arm64
+            runner: macos-14
+          - runtime: osx-x64
+            runner: macos-13
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install native tools
+        run: brew install ffmpeg poppler
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pillow pypdf pyinstaller
+
+      - name: Package
+        env:
+          TOSUN_MAC_RUNTIMES: ${{ matrix.runtime }}
+        run: |
+          chmod +x Build/Package-Mac.sh
+          Build/Package-Mac.sh
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tosun-Flux-${{ matrix.runtime }}
+          path: packaged/Mac/*
+
+  universal:
+    name: Universal macOS package
+    needs: build
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Apple Silicon package
+        uses: actions/download-artifact@v4
+        with:
+          name: Tosun-Flux-osx-arm64
+          path: packaged/Mac/input/arm64
+
+      - name: Download Intel package
+        uses: actions/download-artifact@v4
+        with:
+          name: Tosun-Flux-osx-x64
+          path: packaged/Mac/input/x64
+
+      - name: Merge universal app
+        run: |
+          chmod +x Build/Make-Universal-Mac.sh
+          Build/Make-Universal-Mac.sh packaged/Mac/input
+
+      - name: Upload universal package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tosun-Flux-universal
+          path: |
+            packaged/Mac/Tosun Flux-universal.app
+            packaged/Mac/Tosun Flux-universal.zip
+            packaged/Mac/Tosun Flux-universal.dmg

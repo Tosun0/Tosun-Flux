@@ -88,10 +88,19 @@ for runtime in "${RUNTIMES[@]}"; do
   cp -R "$publish_dir/." "$bundle/Contents/MacOS/"
   mkdir -p "$bundle/Contents/MacOS/backend"
   cp -R "$backend_dist/TosunFluxBackend" "$bundle/Contents/MacOS/backend/"
-  chmod +x "$bundle/Contents/MacOS/$app_executable" "$bundle/Contents/MacOS/backend/TosunFluxBackend/TosunFluxBackend"
   real_esrgan_runtime="$(find "$bundle/Contents/MacOS/backend/TosunFluxBackend" -type f -name 'realesrgan-ncnn-vulkan' -print -quit)"
   [[ -n "$real_esrgan_runtime" ]] || { echo "패키지 안에서 Real-ESRGAN 실행 파일을 찾을 수 없습니다." >&2; exit 1; }
-  chmod +x "$real_esrgan_runtime"
+  ffmpeg_runtime="$(find "$bundle/Contents/MacOS/backend/TosunFluxBackend" -type f -name 'ffmpeg' -print -quit)"
+  pdftoppm_runtime="$(find "$bundle/Contents/MacOS/backend/TosunFluxBackend" -type f -name 'pdftoppm' -print -quit)"
+  [[ -n "$ffmpeg_runtime" ]] || { echo "패키지 안에서 ffmpeg를 찾을 수 없습니다." >&2; exit 1; }
+  [[ -n "$pdftoppm_runtime" ]] || { echo "패키지 안에서 pdftoppm을 찾을 수 없습니다." >&2; exit 1; }
+
+  chmod +x \
+    "$bundle/Contents/MacOS/$app_executable" \
+    "$bundle/Contents/MacOS/backend/TosunFluxBackend/TosunFluxBackend" \
+    "$real_esrgan_runtime" \
+    "$ffmpeg_runtime" \
+    "$pdftoppm_runtime"
 
   if command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
     iconset="$INTERMEDIATE_ROOT/TosunFlux.iconset"

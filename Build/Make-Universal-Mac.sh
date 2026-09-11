@@ -72,7 +72,29 @@ REAL_ESRGAN_EXECUTABLE="$(find "$UNIVERSAL_APP/Contents/MacOS/backend/TosunFluxB
 [[ -n "$REAL_ESRGAN_EXECUTABLE" ]] || { echo 'Universal 앱에 Real-ESRGAN 실행 파일이 없습니다.' >&2; exit 1; }
 lipo -info "$REAL_ESRGAN_EXECUTABLE" | grep -q 'arm64' || { echo 'Real-ESRGAN에 arm64 아키텍처가 없습니다.' >&2; exit 1; }
 lipo -info "$REAL_ESRGAN_EXECUTABLE" | grep -q 'x86_64' || { echo 'Real-ESRGAN에 x86_64 아키텍처가 없습니다.' >&2; exit 1; }
-chmod +x "$REAL_ESRGAN_EXECUTABLE"
+
+# GitHub Actions 아티팩트는 일반 파일의 실행 권한을 보존하지 않을 수 있습니다.
+# 앱 본체와 백엔드뿐 아니라 백엔드가 직접 실행하는 번들 도구도 복구합니다.
+FFMPEG_EXECUTABLE="$(find "$UNIVERSAL_APP/Contents/MacOS/backend/TosunFluxBackend" -type f -name 'ffmpeg' -print -quit)"
+PDFTOPPM_EXECUTABLE="$(find "$UNIVERSAL_APP/Contents/MacOS/backend/TosunFluxBackend" -type f -name 'pdftoppm' -print -quit)"
+[[ -n "$FFMPEG_EXECUTABLE" ]] || { echo 'Universal 앱에 ffmpeg가 없습니다.' >&2; exit 1; }
+[[ -n "$PDFTOPPM_EXECUTABLE" ]] || { echo 'Universal 앱에 pdftoppm이 없습니다.' >&2; exit 1; }
+
+chmod +x \
+  "$APP_EXECUTABLE" \
+  "$BACKEND_EXECUTABLE" \
+  "$REAL_ESRGAN_EXECUTABLE" \
+  "$FFMPEG_EXECUTABLE" \
+  "$PDFTOPPM_EXECUTABLE"
+
+for executable in \
+  "$APP_EXECUTABLE" \
+  "$BACKEND_EXECUTABLE" \
+  "$REAL_ESRGAN_EXECUTABLE" \
+  "$FFMPEG_EXECUTABLE" \
+  "$PDFTOPPM_EXECUTABLE"; do
+  [[ -x "$executable" ]] || { echo "실행 권한을 설정하지 못했습니다: $executable" >&2; exit 1; }
+done
 
 ditto -c -k --sequesterRsrc --keepParent "$UNIVERSAL_APP" "$OUTPUT_ROOT/Tosun Flux-universal.zip"
 if command -v hdiutil >/dev/null 2>&1; then

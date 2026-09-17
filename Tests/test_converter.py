@@ -122,6 +122,92 @@ class ConverterTests(unittest.TestCase):
             with Image.open(destination) as converted:
                 self.assertEqual(converted.size, (16, 12))
 
+    def test_ai_frame_sequence_uses_native_animation_scale(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            destination = root / "output"
+            source.mkdir()
+            destination.mkdir()
+            Image.new("RGB", (8, 6), "white").save(source / "00000001.png")
+            tool = root / "realesrgan-ncnn-vulkan.exe"
+            tool.touch()
+            (root / "models").mkdir()
+            calls: list[list[str]] = []
+
+            def fake_run(args: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+                calls.append(args)
+                output = Path(args[args.index("-o") + 1])
+                Image.new("RGB", (16, 12), "white").save(output / "00000001.png")
+                return subprocess.CompletedProcess(args, 0, "", "")
+
+            with patch("TosunFluxConverter.ai_upscaler_tool", return_value=tool), \
+                 patch("TosunFluxConverter.subprocess.run", side_effect=fake_run):
+                _run_ai_upscale(source, destination, ConversionOptions(scale_factor=2.0, upscale_engine="ai"))
+
+            self.assertEqual(calls[0][calls[0].index("-n") + 1], "realesr-animevideov3")
+            self.assertEqual(calls[0][calls[0].index("-s") + 1], "2")
+            with Image.open(destination / "00000001.png") as converted:
+                self.assertEqual(converted.size, (16, 12))
+
+    def test_ai_upscale_rejects_vulkan_failure_with_zero_exit_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.png"
+            destination = root / "output.png"
+            Image.new("RGB", (8, 6), "white").save(source)
+            tool = root / "realesrgan-ncnn-vulkan.exe"
+            tool.touch()
+            (root / "models").mkdir()
+
+            with patch("TosunFluxConverter.ai_upscaler_tool", return_value=tool), \
+                 patch(
+                     "TosunFluxConverter.subprocess.run",
+                     return_value=subprocess.CompletedProcess([], 0, "", "vkQueueSubmit failed -4"),
+                 ):
+                with self.assertRaises(ConversionError):
+                    _run_ai_upscale(source, destination, ConversionOptions(scale_factor=2.0, upscale_engine="ai"))
+
+    def test_animated_gif_ai_upscale_preserves_animation(self) -> None:
+        if bundled_tool("ffmpeg", "ffmpeg") is None:
+            self.skipTest("FFmpeg is not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "animated.gif"
+            frames = [Image.new("RGB", (16, 12), color) for color in ("red", "green", "blue")]
+            try:
+                frames[0].save(source, save_all=True, append_images=frames[1:], duration=[70, 120, 90], loop=2)
+            finally:
+                for frame in frames:
+                    frame.close()
+
+            def fake_upscale(frame_source: Path, frame_destination: Path, _: ConversionOptions) -> Path:
+                for frame_path in sorted(frame_source.glob("*.png")):
+                    with Image.open(frame_path) as image:
+                        image.resize((32, 24), Image.Resampling.NEAREST).save(frame_destination / frame_path.name)
+                return frame_destination
+
+            with patch("TosunFluxConverter._run_ai_upscale", side_effect=fake_upscale):
+                result = convert_file(
+                    source,
+                    root / "out",
+                    "gif",
+                    ConversionOptions(scale_factor=2.0, upscale_engine="ai"),
+                )
+
+            with Image.open(result.outputs[0]) as converted:
+                self.assertTrue(getattr(converted, "is_animated", False))
+                self.assertEqual(converted.size, (32, 24))
+                self.assertEqual(converted.n_frames, 3)
+                durations = []
+                colors = []
+                for frame in ImageSequence.Iterator(converted):
+                    durations.append(frame.info.get("duration"))
+                    colors.append(frame.convert("RGB").getpixel((0, 0)))
+                self.assertEqual(sum(durations), 280)
+                self.assertEqual(len(set(colors)), 3)
+
     def test_backend_cli_accepts_extended_resolution_presets(self) -> None:
         backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
         for preset in ("4k-uhd", "sd"):

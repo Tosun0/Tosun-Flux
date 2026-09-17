@@ -62,6 +62,7 @@ ANIMATED_GIF_MEMORY_LIMIT = 256 * 1024 * 1024
 UPSCALE_FACTORS = (1.0, 2.0, 4.0)
 UPSCALE_ENGINES = ("resize", "ai")
 AI_UPSCALE_MODEL = "realesrgan-x4plus"
+AI_ANIMATION_MODEL = "realesr-animevideov3"
 AI_4X_TILE_SIZE = 128
 
 ASPECTS = {
@@ -294,28 +295,30 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
     if options.scale_factor not in (2.0, 4.0):
         raise ConversionError("AI 업스케일은 2x 또는 4x만 지원합니다.")
     # realesrgan-x4plus is a native 4x model. Its ncnn-vulkan 2x output path can
-    # shuffle stitched tiles on recent GPUs, so 2x requests use a correct 4x
-    # inference and are reduced once with Lanczos.
+    # shuffle stitched tiles on recent GPUs, so still images use a correct 4x
+    # inference and are reduced once with Lanczos. Frame sequences use the
+    # animation model's native scale variants instead.
     requested_scale = int(options.scale_factor)
+    is_frame_sequence = source.is_dir()
+    needs_downsample = requested_scale == 2 and not is_frame_sequence
     with tempfile.TemporaryDirectory(prefix="tosunflux-realesrgan-") as temporary:
         engine_destination = destination
-        if requested_scale == 2:
-            engine_destination = Path(temporary) / ("x4" if source.is_dir() else "x4.png")
-            if source.is_dir():
-                engine_destination.mkdir()
+        if needs_downsample:
+            engine_destination = Path(temporary) / "x4.png"
 
         args = [
             str(tool),
             "-i", str(source),
             "-o", str(engine_destination),
             "-m", str(tool.parent / "models"),
-            "-n", AI_UPSCALE_MODEL,
-            "-s", "4",
+            "-n", AI_ANIMATION_MODEL if is_frame_sequence else AI_UPSCALE_MODEL,
+            "-s", str(requested_scale if is_frame_sequence else 4),
             "-t", str(AI_4X_TILE_SIZE),
             "-f", "png",
         ]
         completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
-        if completed.returncode:
+        vulkan_failed = "vkwaitforfences failed" in completed.stderr.lower() or "vkqueuesubmit failed" in completed.stderr.lower()
+        if completed.returncode or vulkan_failed:
             message = completed.stderr.strip() or completed.stdout.strip() or "AI 업스케일에 실패했습니다."
             raise ConversionError(message)
 
@@ -323,19 +326,10 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
             engine_outputs = sorted(engine_destination.glob("*.png"))
             if not engine_outputs:
                 raise ConversionError("AI 업스케일 결과 프레임을 만들지 못했습니다.")
-            if requested_scale == 2:
-                destination.mkdir(parents=True, exist_ok=True)
-                for engine_output in engine_outputs:
-                    with Image.open(engine_output) as image:
-                        reduced = image.resize((image.width // 2, image.height // 2), Image.Resampling.LANCZOS)
-                        try:
-                            reduced.save(destination / engine_output.name, format="PNG")
-                        finally:
-                            reduced.close()
         else:
             if not engine_destination.is_file():
                 raise ConversionError("AI 업스케일 결과 파일을 만들지 못했습니다.")
-            if requested_scale == 2:
+            if needs_downsample:
                 with Image.open(engine_destination) as image:
                     reduced = image.resize((image.width // 2, image.height // 2), Image.Resampling.LANCZOS)
                     try:
@@ -349,6 +343,100 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
     elif not destination.is_file():
         raise ConversionError("AI 업스케일 결과 파일을 만들지 못했습니다.")
     return destination
+
+
+def _convert_animated_gif_ai(
+    source: Path,
+    output_dir: Path,
+    options: ConversionOptions,
+    loop: int,
+) -> ConversionResult:
+    ffmpeg = bundled_tool("ffmpeg", "ffmpeg")
+    if ffmpeg is None:
+        raise ConversionError("애니메이션 GIF 업스케일에 필요한 FFmpeg를 찾을 수 없습니다.")
+
+    destination = unique_output(output_dir, source.stem, "gif")
+    with tempfile.TemporaryDirectory(prefix="tosunflux-ai-gif-") as temporary:
+        root = Path(temporary)
+        source_frames = root / "source"
+        output_frames = root / "upscaled"
+        alpha_frames = root / "alpha"
+        source_frames.mkdir()
+        output_frames.mkdir()
+        alpha_frames.mkdir()
+        durations: list[int] = []
+
+        with Image.open(source) as image:
+            default_duration = int(image.info.get("duration") or 100)
+            for index, frame in enumerate(ImageSequence.Iterator(image), start=1):
+                duration = int(frame.info.get("duration") or default_duration)
+                durations.append(max(10, duration))
+                rgba = frame.convert("RGBA")
+                try:
+                    name = f"{index:08d}.png"
+                    alpha = rgba.getchannel("A")
+                    try:
+                        if alpha.getextrema()[0] < 255:
+                            alpha.save(alpha_frames / name, format="PNG")
+                    finally:
+                        alpha.close()
+                    rgb = rgba.convert("RGB")
+                    try:
+                        rgb.save(source_frames / name, format="PNG")
+                    finally:
+                        rgb.close()
+                finally:
+                    rgba.close()
+
+        _run_ai_upscale(source_frames, output_frames, options)
+        frames = sorted(output_frames.glob("*.png"))
+        if len(frames) != len(durations):
+            raise ConversionError("AI 업스케일 GIF 프레임 수가 원본과 일치하지 않습니다.")
+
+        for frame in frames:
+            alpha_path = alpha_frames / frame.name
+            if not alpha_path.is_file():
+                continue
+            with Image.open(frame) as upscaled, Image.open(alpha_path) as alpha:
+                resized_alpha = alpha.resize(upscaled.size, Image.Resampling.LANCZOS)
+                rgba = upscaled.convert("RGBA")
+                try:
+                    rgba.putalpha(resized_alpha)
+                    rgba.save(frame, format="PNG")
+                finally:
+                    resized_alpha.close()
+                    rgba.close()
+
+        concat_file = root / "frames.txt"
+        concat_lines: list[str] = []
+        for frame, duration in zip(frames, durations):
+            concat_lines.extend(
+                (f"file 'upscaled/{frame.name}'", "option framerate 100", f"duration {duration / 1000:.3f}")
+            )
+        concat_file.write_text("\n".join(concat_lines), encoding="utf-8")
+
+        palette = root / "palette.png"
+        palette_args = [
+            str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(concat_file),
+            "-vf", "palettegen=reserve_transparent=1", "-frames:v", "1", str(palette),
+        ]
+        generated = subprocess.run(palette_args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if generated.returncode:
+            raise ConversionError(generated.stderr.strip() or "GIF 팔레트 생성에 실패했습니다.")
+
+        encode_args = [
+            str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(concat_file),
+            "-i", str(palette),
+            "-filter_complex", "[0:v][1:v]paletteuse=dither=sierra2_4a:alpha_threshold=128",
+            "-loop", str(loop), "-final_delay", str(max(1, durations[-1] // 10)),
+            "-fps_mode", "vfr", str(destination),
+        ]
+        encoded = subprocess.run(encode_args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if encoded.returncode:
+            raise ConversionError(encoded.stderr.strip() or "AI 업스케일 GIF 조립에 실패했습니다.")
+    return ConversionResult(source, (destination,))
 
 
 def _write_image(image: Image.Image, destination: Path, target: str, options: ConversionOptions) -> None:
@@ -423,15 +511,14 @@ def _convert_animated_gif_with_ffmpeg(
 
 
 def _convert_animated_gif(source: Path, output_dir: Path, options: ConversionOptions) -> ConversionResult:
-    if options.upscale_engine == "ai" and options.scale_factor != 1.0:
-        raise ConversionError("애니메이션 GIF의 AI 업스케일은 지원하지 않습니다.")
-
     frames: list[Image.Image] = []
     durations: list[int] = []
     disposals: list[int] = []
     with Image.open(source) as image:
         default_duration = int(image.info.get("duration") or 100)
         loop = int(image.info.get("loop", 0))
+        if options.upscale_engine == "ai" and options.scale_factor != 1.0:
+            return _convert_animated_gif_ai(source, output_dir, options, loop)
         source_size = image.size
         target_size = target_dimensions(source_size, options) or source_size
         estimated_memory = target_size[0] * target_size[1] * max(1, getattr(image, "n_frames", 1)) * 4

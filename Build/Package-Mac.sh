@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="1.2.4"
+VERSION="1.2.5"
 PYTHON_BIN="${TOSUN_PYTHON:-python3}"
 FFMPEG_BIN="${TOSUN_FFMPEG:-ffmpeg}"
 PDFTOPPM_BIN="${TOSUN_PDFTOPPM:-pdftoppm}"

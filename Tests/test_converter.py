@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend"))
-from PIL import Image
+from PIL import Image, ImageSequence
 
 from TosunFluxConverter import ConversionError, ConversionOptions, _convert_ai_video, _is_identity_conversion, _video_filter, bundled_tool, common_targets, convert_file, supported_targets, target_dimensions
 
@@ -148,6 +148,43 @@ class ConverterTests(unittest.TestCase):
             Image.new("RGB", (320, 240), "#7286ee").save(source)
             result = convert_file(source, root / "out", "png", ConversionOptions())
             self.assertEqual(result.outputs[0].read_bytes(), source.read_bytes())
+
+    def test_animated_gif_to_gif_preserves_frames_and_timing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "animated.gif"
+            frames = [Image.new("RGB", (16, 12), color) for color in ("red", "green", "blue")]
+            try:
+                frames[0].save(
+                    source,
+                    save_all=True,
+                    append_images=frames[1:],
+                    duration=[70, 120, 90],
+                    loop=3,
+                    disposal=2,
+                )
+            finally:
+                for frame in frames:
+                    frame.close()
+
+            result = convert_file(
+                source,
+                root / "out",
+                "gif",
+                ConversionOptions(optimize="balanced", width=8, height=6),
+            )
+            with Image.open(result.outputs[0]) as converted:
+                self.assertTrue(getattr(converted, "is_animated", False))
+                self.assertEqual(converted.n_frames, 3)
+                self.assertEqual(converted.size, (8, 6))
+                self.assertEqual(converted.info.get("loop"), 3)
+                durations = []
+                colors = []
+                for frame in ImageSequence.Iterator(converted):
+                    durations.append(frame.info.get("duration"))
+                    colors.append(frame.convert("RGB").getpixel((0, 0)))
+                self.assertEqual(durations, [70, 120, 90])
+                self.assertEqual(len(set(colors)), 3)
 
     def test_jpeg_alias_preserves_original_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

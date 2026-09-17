@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageSequence
 
 try:
     from pypdf import PdfReader, PdfWriter
@@ -274,7 +274,7 @@ def _apply_image_geometry(image: Image.Image, target: str, options: ConversionOp
         return ImageOps.fit(image, size, Image.Resampling.LANCZOS)
 
     contained = ImageOps.contain(image, size, Image.Resampling.LANCZOS)
-    transparent = target in {"png", "webp", "tiff"} and "A" in image.getbands()
+    transparent = target in {"png", "webp", "tiff", "gif"} and "A" in image.getbands()
     mode = "RGBA" if transparent else "RGB"
     canvas = Image.new(mode, size, (0, 0, 0, 0) if transparent else "black")
     if contained.mode != mode:
@@ -341,7 +341,53 @@ def _write_image(image: Image.Image, destination: Path, target: str, options: Co
         converted.close()
 
 
+def _convert_animated_gif(source: Path, output_dir: Path, options: ConversionOptions) -> ConversionResult:
+    if options.upscale_engine == "ai" and options.scale_factor != 1.0:
+        raise ConversionError("애니메이션 GIF의 AI 업스케일은 지원하지 않습니다.")
+
+    destination = unique_output(output_dir, source.stem, "gif")
+    frames: list[Image.Image] = []
+    durations: list[int] = []
+    disposals: list[int] = []
+    with Image.open(source) as image:
+        default_duration = int(image.info.get("duration") or 100)
+        loop = int(image.info.get("loop", 0))
+        for frame in ImageSequence.Iterator(image):
+            rgba = frame.convert("RGBA")
+            try:
+                frames.append(_apply_image_geometry(rgba, "gif", options))
+            finally:
+                rgba.close()
+            duration = frame.info.get("duration")
+            disposal = getattr(frame, "disposal_method", None)
+            durations.append(int(duration) if duration is not None else default_duration)
+            disposals.append(int(disposal) if disposal is not None else 2)
+
+    if not frames:
+        raise ConversionError("GIF 프레임을 읽지 못했습니다.")
+    try:
+        frames[0].save(
+            destination,
+            format="GIF",
+            save_all=True,
+            append_images=frames[1:],
+            duration=durations,
+            loop=loop,
+            disposal=disposals,
+            optimize=options.optimize != "source",
+        )
+    finally:
+        for frame in frames:
+            frame.close()
+    return ConversionResult(source, (destination,))
+
+
 def _convert_image(source: Path, output_dir: Path, target: str, options: ConversionOptions) -> ConversionResult:
+    if source.suffix.lower() == ".gif" and target == "gif":
+        with Image.open(source) as image:
+            if getattr(image, "is_animated", False):
+                return _convert_animated_gif(source, output_dir, options)
+
     destination = unique_output(output_dir, source.stem, target)
     if options.upscale_engine == "ai" and options.scale_factor != 1.0:
         with tempfile.TemporaryDirectory(prefix="tosunflux-ai-") as temporary:

@@ -12,7 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend"))
 from PIL import Image, ImageSequence
 
-from TosunFluxConverter import ConversionError, ConversionOptions, _convert_ai_video, _is_identity_conversion, _video_filter, bundled_tool, common_targets, convert_file, supported_targets, target_dimensions
+from TosunFluxConverter import ConversionError, ConversionOptions, _convert_ai_video, _is_identity_conversion, _run_ai_upscale, _video_filter, bundled_tool, common_targets, convert_file, supported_targets, target_dimensions
 
 
 class ConverterTests(unittest.TestCase):
@@ -96,6 +96,31 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("-vf", extract_call)
             self.assertIn("fps=60", extract_call)
             self.assertEqual(encode_call[encode_call.index("-framerate") + 1], "60")
+
+    def test_ai_2x_uses_native_4x_output_then_downsamples(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.png"
+            destination = root / "output.png"
+            Image.new("RGB", (8, 6), "white").save(source)
+            tool = root / "realesrgan-ncnn-vulkan.exe"
+            tool.touch()
+            (root / "models").mkdir()
+            calls: list[list[str]] = []
+
+            def fake_run(args: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+                calls.append(args)
+                output = Path(args[args.index("-o") + 1])
+                Image.new("RGB", (32, 24), "white").save(output)
+                return subprocess.CompletedProcess(args, 0, "", "")
+
+            with patch("TosunFluxConverter.ai_upscaler_tool", return_value=tool), \
+                 patch("TosunFluxConverter.subprocess.run", side_effect=fake_run):
+                _run_ai_upscale(source, destination, ConversionOptions(scale_factor=2.0, upscale_engine="ai"))
+
+            self.assertEqual(calls[0][calls[0].index("-s") + 1], "4")
+            with Image.open(destination) as converted:
+                self.assertEqual(converted.size, (16, 12))
 
     def test_backend_cli_accepts_extended_resolution_presets(self) -> None:
         backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"

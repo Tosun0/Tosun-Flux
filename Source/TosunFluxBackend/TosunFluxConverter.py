@@ -293,20 +293,56 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
         raise ConversionError("AI 업스케일러를 찾을 수 없습니다. Real-ESRGAN 실행 파일과 모델을 vendor 폴더에 넣으세요.")
     if options.scale_factor not in (2.0, 4.0):
         raise ConversionError("AI 업스케일은 2x 또는 4x만 지원합니다.")
-    args = [
-        str(tool),
-        "-i", str(source),
-        "-o", str(destination),
-        "-m", str(tool.parent / "models"),
-        "-n", AI_UPSCALE_MODEL,
-        "-s", str(int(options.scale_factor)),
-    ]
-    if options.scale_factor == 4.0:
-        args.extend(["-t", str(AI_4X_TILE_SIZE)])
-    completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if completed.returncode:
-        message = completed.stderr.strip() or completed.stdout.strip() or "AI 업스케일에 실패했습니다."
-        raise ConversionError(message)
+    # realesrgan-x4plus is a native 4x model. Its ncnn-vulkan 2x output path can
+    # shuffle stitched tiles on recent GPUs, so 2x requests use a correct 4x
+    # inference and are reduced once with Lanczos.
+    requested_scale = int(options.scale_factor)
+    with tempfile.TemporaryDirectory(prefix="tosunflux-realesrgan-") as temporary:
+        engine_destination = destination
+        if requested_scale == 2:
+            engine_destination = Path(temporary) / ("x4" if source.is_dir() else "x4.png")
+            if source.is_dir():
+                engine_destination.mkdir()
+
+        args = [
+            str(tool),
+            "-i", str(source),
+            "-o", str(engine_destination),
+            "-m", str(tool.parent / "models"),
+            "-n", AI_UPSCALE_MODEL,
+            "-s", "4",
+            "-t", str(AI_4X_TILE_SIZE),
+            "-f", "png",
+        ]
+        completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if completed.returncode:
+            message = completed.stderr.strip() or completed.stdout.strip() or "AI 업스케일에 실패했습니다."
+            raise ConversionError(message)
+
+        if source.is_dir():
+            engine_outputs = sorted(engine_destination.glob("*.png"))
+            if not engine_outputs:
+                raise ConversionError("AI 업스케일 결과 프레임을 만들지 못했습니다.")
+            if requested_scale == 2:
+                destination.mkdir(parents=True, exist_ok=True)
+                for engine_output in engine_outputs:
+                    with Image.open(engine_output) as image:
+                        reduced = image.resize((image.width // 2, image.height // 2), Image.Resampling.LANCZOS)
+                        try:
+                            reduced.save(destination / engine_output.name, format="PNG")
+                        finally:
+                            reduced.close()
+        else:
+            if not engine_destination.is_file():
+                raise ConversionError("AI 업스케일 결과 파일을 만들지 못했습니다.")
+            if requested_scale == 2:
+                with Image.open(engine_destination) as image:
+                    reduced = image.resize((image.width // 2, image.height // 2), Image.Resampling.LANCZOS)
+                    try:
+                        reduced.save(destination, format="PNG")
+                    finally:
+                        reduced.close()
+
     if source.is_dir():
         if not destination.is_dir() or not any(destination.glob("*.png")):
             raise ConversionError("AI 업스케일 결과 프레임을 만들지 못했습니다.")

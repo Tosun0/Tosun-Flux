@@ -58,6 +58,7 @@ RESOLUTIONS = {
 }
 
 MAX_OUTPUT_DIMENSION = 16384
+ANIMATED_GIF_MEMORY_LIMIT = 256 * 1024 * 1024
 UPSCALE_FACTORS = (1.0, 2.0, 4.0)
 UPSCALE_ENGINES = ("resize", "ai")
 AI_UPSCALE_MODEL = "realesrgan-x4plus"
@@ -341,17 +342,65 @@ def _write_image(image: Image.Image, destination: Path, target: str, options: Co
         converted.close()
 
 
+def _animated_gif_filter(source_size: tuple[int, int], target_size: tuple[int, int], fit: str) -> str | None:
+    if source_size == target_size:
+        return None
+
+    width, height = target_size
+    if fit == "stretch":
+        return f"scale={width}:{height}:flags=lanczos"
+    if fit == "fill":
+        return (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={width}:{height}"
+        )
+    return (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+    )
+
+
+def _convert_animated_gif_with_ffmpeg(
+    source: Path,
+    output_dir: Path,
+    source_size: tuple[int, int],
+    target_size: tuple[int, int],
+    options: ConversionOptions,
+    loop: int,
+) -> ConversionResult:
+    ffmpeg = bundled_tool("ffmpeg", "ffmpeg")
+    if ffmpeg is None:
+        raise ConversionError("대형 애니메이션 GIF 변환에 필요한 FFmpeg를 찾을 수 없습니다.")
+
+    destination = unique_output(output_dir, source.stem, "gif")
+    args = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-i", str(source)]
+    video_filter = _animated_gif_filter(source_size, target_size, options.fit)
+    if video_filter:
+        args.extend(["-vf", video_filter])
+    args.extend(["-gifflags", "+transdiff", "-loop", str(loop), str(destination)])
+    completed = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if completed.returncode:
+        raise ConversionError(completed.stderr.strip() or "대형 애니메이션 GIF 변환에 실패했습니다.")
+    if not destination.is_file():
+        raise ConversionError("애니메이션 GIF 결과 파일을 만들지 못했습니다.")
+    return ConversionResult(source, (destination,))
+
+
 def _convert_animated_gif(source: Path, output_dir: Path, options: ConversionOptions) -> ConversionResult:
     if options.upscale_engine == "ai" and options.scale_factor != 1.0:
         raise ConversionError("애니메이션 GIF의 AI 업스케일은 지원하지 않습니다.")
 
-    destination = unique_output(output_dir, source.stem, "gif")
     frames: list[Image.Image] = []
     durations: list[int] = []
     disposals: list[int] = []
     with Image.open(source) as image:
         default_duration = int(image.info.get("duration") or 100)
         loop = int(image.info.get("loop", 0))
+        source_size = image.size
+        target_size = target_dimensions(source_size, options) or source_size
+        estimated_memory = target_size[0] * target_size[1] * max(1, getattr(image, "n_frames", 1)) * 4
+        if estimated_memory > ANIMATED_GIF_MEMORY_LIMIT:
+            return _convert_animated_gif_with_ffmpeg(source, output_dir, source_size, target_size, options, loop)
         for frame in ImageSequence.Iterator(image):
             rgba = frame.convert("RGBA")
             try:
@@ -365,6 +414,7 @@ def _convert_animated_gif(source: Path, output_dir: Path, options: ConversionOpt
 
     if not frames:
         raise ConversionError("GIF 프레임을 읽지 못했습니다.")
+    destination = unique_output(output_dir, source.stem, "gif")
     try:
         frames[0].save(
             destination,

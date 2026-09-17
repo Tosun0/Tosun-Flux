@@ -186,6 +186,41 @@ class ConverterTests(unittest.TestCase):
                 self.assertEqual(durations, [70, 120, 90])
                 self.assertEqual(len(set(colors)), 3)
 
+    def test_animated_gif_large_resize_uses_streaming_path(self) -> None:
+        if bundled_tool("ffmpeg", "ffmpeg") is None:
+            self.skipTest("FFmpeg is not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "animated.gif"
+            frames = [Image.new("RGB", (16, 12), color) for color in ("red", "green", "blue")]
+            try:
+                frames[0].save(
+                    source,
+                    save_all=True,
+                    append_images=frames[1:],
+                    duration=[70, 120, 90],
+                    loop=3,
+                    disposal=2,
+                )
+            finally:
+                for frame in frames:
+                    frame.close()
+
+            with patch("TosunFluxConverter.ANIMATED_GIF_MEMORY_LIMIT", 1):
+                result = convert_file(
+                    source,
+                    root / "out",
+                    "gif",
+                    ConversionOptions(optimize="balanced", width=8, height=6),
+                )
+
+            with Image.open(result.outputs[0]) as converted:
+                self.assertTrue(getattr(converted, "is_animated", False))
+                self.assertEqual(converted.n_frames, 3)
+                self.assertEqual(converted.size, (8, 6))
+                self.assertEqual(converted.info.get("loop"), 3)
+
     def test_jpeg_alias_preserves_original_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

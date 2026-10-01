@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: tosun-flux-web
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./Build/Dockerfile.Web
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: TOSUN_WEB_MAX_FILE_MB
+        value: 100
+      - key: TOSUN_WEB_MAX_REQUEST_MB
+        value: 200

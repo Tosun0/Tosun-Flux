@@ -108,6 +108,8 @@ docker run --rm -p 8080:8080 tosun-flux-web
 
 `main`에 웹 관련 변경을 푸시하면 GitHub Actions가 `ghcr.io/tosun0/tosun-flux-web:latest` 이미지를 자동으로 게시합니다. 이 이미지를 컨테이너 호스팅에 연결하면 Windows와 macOS 모두 설치 없이 같은 웹 주소를 사용할 수 있습니다.
 
+[Render에서 배포](https://render.com/deploy?repo=https://github.com/Tosun0/Tosun-Flux)를 누르면 저장소의 `render.yaml`로 웹 서비스를 생성할 수 있습니다.
+
 기본 컨테이너는 FFmpeg와 Poppler를 포함합니다. AI 업스케일은 Vulkan GPU가 있는 서버에 Real-ESRGAN 실행 파일과 `models` 폴더를 함께 배치하고 `TOSUN_REALESRGAN_BIN`으로 실행 파일을 지정해야 활성화됩니다. 업로드 제한은 `TOSUN_WEB_MAX_FILE_MB`와 `TOSUN_WEB_MAX_REQUEST_MB`로 조정합니다.
 
 ## 테스트

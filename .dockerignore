@@ -1,0 +1,10 @@
+.git
+.github
+Build/Intermediate
+Build/ThirdParty
+packaged
+graphify-out
+**/bin
+**/obj
+**/__pycache__
+*.pyc

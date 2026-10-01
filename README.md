@@ -10,6 +10,7 @@
 
 - Windows Acrylic 글래스 배경과 Per-Monitor V2 DPI 대응
 - macOS Avalonia GUI와 `.app`/`.dmg` 패키징 경로
+- Mac·Windows 브라우저에서 사용하는 반응형 Web UI와 변환 API
 - 파일 드래그 앤 드롭 및 파일별 삭제
 - 이미지·영상·PDF 최적화
 - 해상도(4K UHD·4K·QHD·FHD·HD·SD)·화면비·맞춤 방식·직접 픽셀 지정
@@ -88,6 +89,26 @@ export TOSUN_REALESRGAN_DIR="$HOME/Tools/realesrgan-ncnn-vulkan-20220424-macos"
 Real-ESRGAN macOS portable 패키지는 공식 릴리즈의 `realesrgan-ncnn-vulkan-20220424-macos.zip`을 내려받아 압축 해제합니다. `TOSUN_REALESRGAN_DIR`는 실행 파일과 `models` 폴더를 함께 포함한 디렉터리여야 합니다.
 
 로컬 실행은 현재 Mac의 아키텍처에 맞는 앱을 만들고, GitHub Actions의 `Build macOS packages` 워크플로는 두 아키텍처를 내부적으로 빌드한 뒤 `Tosun Flux-universal.dmg` 하나로 합칩니다. 사용자에게는 universal DMG만 전달하면 됩니다. 현재 Windows 작업 환경에서는 macOS 앱 실행·서명·공증까지 직접 검증할 수 없으며, 배포 전 Apple Developer 서명과 공증을 별도로 적용해야 합니다.
+
+## 웹 실행과 배포
+
+웹 UI는 기존 `TosunFluxConverter.py`를 그대로 호출합니다. 개발 환경에서는 다음 명령으로 실행합니다.
+
+```powershell
+python -m pip install -r .\Source\TosunFluxWeb\requirements-dev.txt
+python -m uvicorn Source.TosunFluxWeb.TosunFluxWeb:app --host 127.0.0.1 --port 8080
+```
+
+브라우저에서 `http://127.0.0.1:8080`을 엽니다. 배포용 컨테이너는 저장소 루트에서 빌드합니다.
+
+```powershell
+docker build -f .\Build\Dockerfile.Web -t tosun-flux-web .
+docker run --rm -p 8080:8080 tosun-flux-web
+```
+
+`main`에 웹 관련 변경을 푸시하면 GitHub Actions가 `ghcr.io/tosun0/tosun-flux-web:latest` 이미지를 자동으로 게시합니다. 이 이미지를 컨테이너 호스팅에 연결하면 Windows와 macOS 모두 설치 없이 같은 웹 주소를 사용할 수 있습니다.
+
+기본 컨테이너는 FFmpeg와 Poppler를 포함합니다. AI 업스케일은 Vulkan GPU가 있는 서버에 Real-ESRGAN 실행 파일과 `models` 폴더를 함께 배치하고 `TOSUN_REALESRGAN_BIN`으로 실행 파일을 지정해야 활성화됩니다. 업로드 제한은 `TOSUN_WEB_MAX_FILE_MB`와 `TOSUN_WEB_MAX_REQUEST_MB`로 조정합니다.
 
 ## 테스트
 

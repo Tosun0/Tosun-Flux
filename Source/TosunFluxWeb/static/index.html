@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0c12">
+  <title>Tosun Flux Web</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="aurora aurora-a"></div><div class="aurora aurora-b"></div>
+  <main class="shell">
+    <header class="hero">
+      <div><p class="eyebrow">TOSUN STUDIO · WEB</p><h1>TOSUN FLUX</h1><p class="subtitle">토순의 파일 컨버터 · Mac과 Windows 어디서든 브라우저로 변환하세요.</p></div>
+      <div class="mascot-wrap"><span class="status-dot" aria-hidden="true"></span><img src="/assets/tosun-floating-v1.png" alt="공중에 떠 있는 토순"></div>
+    </header>
+    <section class="workspace">
+      <article class="glass files-panel">
+        <div class="section-heading"><div><span class="step">01</span><h2>변환할 파일</h2></div><button id="clearButton" class="text-button" type="button" disabled>전체 비우기</button></div>
+        <label id="dropZone" class="drop-zone" for="fileInput" tabindex="0"><input id="fileInput" type="file" multiple hidden><span class="drop-icon">＋</span><strong>파일을 끌어다 놓으세요</strong><span>또는 클릭해서 여러 파일을 선택합니다</span></label>
+        <div class="file-meta"><span id="fileSummary">파일이 없습니다</span><span>최대 20개</span></div>
+        <ul id="fileList" class="file-list" aria-live="polite"></ul>
+      </article>
+      <article class="glass settings-panel">
+        <div class="section-heading"><div><span class="step">02</span><h2>변환 설정</h2></div><span id="engineBadge" class="engine-badge">엔진 확인 중</span></div>
+        <div class="settings-grid">
+          <label>출력 형식<select id="target" disabled></select></label>
+          <label>최적화<select id="optimize"><option value="source">원본 유지</option><option value="quality">고품질</option><option value="balanced">균형</option><option value="small">작은 용량</option></select></label>
+          <label>해상도<select id="resolution"><option value="source">원본</option><option value="scale-2">2x AI 업스케일</option><option value="scale-4">4x AI 업스케일</option><option value="4k-uhd">4K UHD · 3840×2160</option><option value="4k">4K · 4096×2160</option><option value="qhd">QHD · 2560×1440</option><option value="fhd">FHD · 1920×1080</option><option value="hd">HD · 1280×720</option><option value="sd">SD · 720×480</option><option value="custom">직접 지정</option></select></label>
+          <label>화면비<select id="aspect"><option value="source">원본</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label>
+        </div>
+        <div id="customSize" class="custom-size" hidden><label>가로<input id="width" type="number" min="2" max="16384" placeholder="1920"></label><span>×</span><label>세로<input id="height" type="number" min="2" max="16384" placeholder="1080"></label></div>
+        <div class="segmented" aria-label="화면 맞춤"><label><input type="radio" name="fit" value="fit" checked><span>맞추기</span></label><label><input type="radio" name="fit" value="fill"><span>채우기</span></label><label><input type="radio" name="fit" value="stretch"><span>늘리기</span></label></div>
+        <label id="fpsWrap" class="fps" hidden>프레임<select id="fps"><option value="source">원본</option><option>23.976</option><option>24</option><option>25</option><option>29.97</option><option>30</option><option>50</option><option>59.94</option><option>60</option></select></label>
+        <div class="action-area"><div class="progress-track"><span id="progressBar"></span></div><p id="statusText" role="status">파일을 추가하면 변환을 시작할 수 있습니다.</p><button id="convertButton" class="primary-button" type="button" disabled>변환 시작</button></div>
+      </article>
+    </section>
+    <footer><span id="version">Tosun Flux Web</span><span>© 2026 Tosun Studio. All rights reserved.</span></footer>
+  </main>
+</body>
+</html>

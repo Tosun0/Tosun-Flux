@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
+from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = PROJECT_ROOT / "Source" / "TosunFluxBackend"
@@ -20,12 +22,21 @@ WEB_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from TosunFluxConverter import (  # noqa: E402
+    AI_NATIVE_SCALE,
+    ASPECTS,
+    FIT_MODES,
+    FRAME_RATES,
+    MAX_OUTPUT_DIMENSION,
+    OPTIMIZATION_MODES,
     RESOLUTIONS,
+    UPSCALE_FACTORS,
     ConversionError,
     ConversionOptions,
     ai_upscaler_tool,
     common_targets,
+    conversion_profile,
     convert_file,
+    supported_targets,
 )
 
 VERSION = "1.2.6"
@@ -68,6 +79,7 @@ def health() -> dict[str, object]:
         "ai_upscale": ai_upscaler_tool() is not None,
         "max_files": MAX_FILES,
         "max_file_mb": MAX_FILE_BYTES // (1024 * 1024),
+        "profile": conversion_profile(),
     }
 
 
@@ -89,10 +101,18 @@ async def convert(
     scale_factor: float = Form(1.0),
     width: int | None = Form(None),
     height: int | None = Form(None),
+    webgpu_scale: float | None = Form(None),
 ) -> FileResponse:
     if not 1 <= len(files) <= MAX_FILES:
         raise HTTPException(400, f"파일은 한 번에 1~{MAX_FILES}개까지 변환할 수 있습니다.")
 
+    if webgpu_scale is not None:
+        if webgpu_scale not in UPSCALE_FACTORS or webgpu_scale == 1:
+            raise HTTPException(400, "지원하지 않는 WebGPU 업스케일 배율입니다.")
+        if target not in supported_targets(Path("image.png")):
+            raise HTTPException(400, "WebGPU 결과는 이미지 또는 PDF로 저장할 수 있습니다.")
+        if scale_factor != 1 or resolution != "source" or aspect != "source" or width is not None or fps != "source":
+            raise HTTPException(400, "WebGPU 결과에 업스케일 또는 해상도 설정을 중복 적용할 수 없습니다.")
     options = _options(optimize, resolution, aspect, fit, fps, scale_factor, width, height)
     root = Path(tempfile.mkdtemp(prefix="tosunflux-web-"))
     inputs = root / "inputs"
@@ -123,7 +143,7 @@ async def convert(
             raise HTTPException(400, f"선택한 파일을 {target} 형식으로 함께 변환할 수 없습니다.")
 
         # ponytail: keep jobs synchronous until concurrent users or proxy timeouts require a queue.
-        converted = await run_in_threadpool(_convert_all, saved, outputs, target, options)
+        converted = await run_in_threadpool(_convert_all, saved, outputs, target, options, webgpu_scale)
         if len(converted) == 1:
             output = converted[0]
             return FileResponse(
@@ -179,22 +199,22 @@ def _options(
     width: int | None,
     height: int | None,
 ) -> ConversionOptions:
-    if optimize not in {"source", "quality", "balanced", "small"}:
+    if optimize not in OPTIMIZATION_MODES:
         raise HTTPException(400, "지원하지 않는 최적화 설정입니다.")
     if resolution not in {"source", *RESOLUTIONS}:
         raise HTTPException(400, "지원하지 않는 해상도 설정입니다.")
-    if aspect not in {"source", "16:9", "9:16", "1:1", "4:3", "3:4"}:
+    if aspect not in {"source", *ASPECTS}:
         raise HTTPException(400, "지원하지 않는 화면비입니다.")
-    if fit not in {"fit", "fill", "stretch"}:
+    if fit not in FIT_MODES:
         raise HTTPException(400, "지원하지 않는 화면 맞춤 설정입니다.")
-    if fps not in {"source", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60"}:
+    if fps not in FRAME_RATES:
         raise HTTPException(400, "지원하지 않는 프레임 설정입니다.")
-    if scale_factor not in {1.0, 2.0, 4.0}:
+    if scale_factor not in UPSCALE_FACTORS:
         raise HTTPException(400, "업스케일은 원본, 2x, 4x만 지원합니다.")
     if (width is None) != (height is None):
         raise HTTPException(400, "직접 해상도는 가로와 세로를 함께 입력하세요.")
-    if width is not None and not (2 <= width <= 16384 and 2 <= height <= 16384):
-        raise HTTPException(400, "직접 해상도는 가로·세로 2~16384 범위여야 합니다.")
+    if width is not None and not (2 <= width <= MAX_OUTPUT_DIMENSION and 2 <= height <= MAX_OUTPUT_DIMENSION):
+        raise HTTPException(400, f"직접 해상도는 가로·세로 2~{MAX_OUTPUT_DIMENSION} 범위여야 합니다.")
     if scale_factor != 1.0 and ai_upscaler_tool() is None:
         raise HTTPException(503, "이 서버에는 AI 업스케일 엔진이 설치되어 있지 않습니다.")
     return ConversionOptions(
@@ -215,8 +235,22 @@ def _convert_all(
     output_dir: Path,
     target: str,
     options: ConversionOptions,
+    webgpu_scale: float | None = None,
 ) -> list[Path]:
     outputs: list[Path] = []
     for source in sources:
-        outputs.extend(convert_file(source, output_dir, target, options).outputs)
+        source_options = options
+        if webgpu_scale is not None:
+            try:
+                with Image.open(source) as image:
+                    if image.format != "PNG" or any(edge % AI_NATIVE_SCALE for edge in image.size):
+                        raise ConversionError("WebGPU 중간 결과는 네이티브 배율의 PNG여야 합니다.")
+                    width, height = (int(edge / AI_NATIVE_SCALE * webgpu_scale) for edge in image.size)
+            except (OSError, ValueError) as error:
+                raise ConversionError("WebGPU 중간 이미지를 읽지 못했습니다.") from error
+            if not (2 <= width <= MAX_OUTPUT_DIMENSION and 2 <= height <= MAX_OUTPUT_DIMENSION):
+                raise ConversionError(f"업스케일 결과는 가로·세로 2~{MAX_OUTPUT_DIMENSION} 범위여야 합니다.")
+            # The same Lanczos geometry and image writer used by the desktop app.
+            source_options = replace(options, width=width, height=height, fit="stretch")
+        outputs.extend(convert_file(source, output_dir, target, source_options).outputs)
     return outputs

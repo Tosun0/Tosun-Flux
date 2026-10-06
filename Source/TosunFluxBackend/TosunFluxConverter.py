@@ -49,8 +49,8 @@ class ConversionOptions:
 
 
 RESOLUTIONS = {
-    "4k-uhd": (3840, 2160),
     "4k": (4096, 2160),
+    "4k-uhd": (3840, 2160),
     "qhd": (2560, 1440),
     "fhd": (1920, 1080),
     "hd": (1280, 720),
@@ -62,8 +62,15 @@ ANIMATED_GIF_MEMORY_LIMIT = 256 * 1024 * 1024
 UPSCALE_FACTORS = (1.0, 2.0, 4.0)
 UPSCALE_ENGINES = ("resize", "ai")
 AI_UPSCALE_MODEL = "realesrgan-x4plus"
+AI_NATIVE_SCALE = 4
 AI_ANIMATION_MODEL = "realesr-animevideov3"
 AI_4X_TILE_SIZE = 128
+OPTIMIZATION_MODES = ("source", "quality", "balanced", "small")
+FIT_MODES = ("fit", "fill", "stretch")
+FRAME_RATES = ("source", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60")
+WEBGPU_MODELS = {
+    "realesrgan-x4plus": "https://huggingface.co/skillsafe-ai/realesrgan-x4plus/resolve/main/model_fp16.onnx",
+}
 
 ASPECTS = {
     "16:9": 16 / 9,
@@ -186,6 +193,25 @@ def common_targets(paths: Iterable[Path]) -> tuple[str, ...]:
     return tuple(target for target in order if target in common)
 
 
+def conversion_profile() -> dict[str, object]:
+    """Expose the desktop engine's rules to other frontends, without copying them."""
+    return {
+        "resolutions": RESOLUTIONS,
+        "aspects": list(ASPECTS),
+        "optimizations": OPTIMIZATION_MODES,
+        "fit_modes": FIT_MODES,
+        "frame_rates": FRAME_RATES,
+        "image_targets": supported_targets(Path("image.png")),
+        "max_output_dimension": MAX_OUTPUT_DIMENSION,
+        "upscale": {
+            "factors": [factor for factor in UPSCALE_FACTORS if factor != 1],
+            "model": AI_UPSCALE_MODEL,
+            "native_scale": AI_NATIVE_SCALE,
+            "webgpu_model_url": WEBGPU_MODELS.get(AI_UPSCALE_MODEL),
+        },
+    }
+
+
 def unique_output(directory: Path, stem: str, extension: str) -> Path:
     candidate = directory / f"{stem}.{extension}"
     index = 1
@@ -297,7 +323,7 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
     tool = ai_upscaler_tool()
     if tool is None:
         raise ConversionError("AI 업스케일러를 찾을 수 없습니다. Real-ESRGAN 실행 파일과 모델을 vendor 폴더에 넣으세요.")
-    if options.scale_factor not in (2.0, 4.0):
+    if options.scale_factor not in UPSCALE_FACTORS or options.scale_factor == 1:
         raise ConversionError("AI 업스케일은 2x 또는 4x만 지원합니다.")
     # realesrgan-x4plus is a native 4x model. Its ncnn-vulkan 2x output path can
     # shuffle stitched tiles on recent GPUs, so still images use a correct 4x
@@ -305,7 +331,7 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
     # animation model's native scale variants instead.
     requested_scale = int(options.scale_factor)
     is_frame_sequence = source.is_dir()
-    needs_downsample = requested_scale == 2 and not is_frame_sequence
+    needs_downsample = requested_scale != AI_NATIVE_SCALE and not is_frame_sequence
     with tempfile.TemporaryDirectory(prefix="tosunflux-realesrgan-") as temporary:
         engine_destination = destination
         if needs_downsample:
@@ -317,7 +343,7 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
             "-o", str(engine_destination),
             "-m", str(tool.parent / "models"),
             "-n", AI_ANIMATION_MODEL if is_frame_sequence else AI_UPSCALE_MODEL,
-            "-s", str(requested_scale if is_frame_sequence else 4),
+            "-s", str(requested_scale if is_frame_sequence else AI_NATIVE_SCALE),
             "-t", str(AI_4X_TILE_SIZE),
             "-f", "png",
         ]
@@ -336,7 +362,7 @@ def _run_ai_upscale(source: Path, destination: Path, options: ConversionOptions)
                 raise ConversionError("AI 업스케일 결과 파일을 만들지 못했습니다.")
             if needs_downsample:
                 with Image.open(engine_destination) as image:
-                    reduced = image.resize((image.width // 2, image.height // 2), Image.Resampling.LANCZOS)
+                    reduced = image.resize((image.width * requested_scale // AI_NATIVE_SCALE, image.height * requested_scale // AI_NATIVE_SCALE), Image.Resampling.LANCZOS)
                     try:
                         reduced.save(destination, format="PNG")
                     finally:

@@ -1,23 +1,179 @@
-const $=s=>document.querySelector(s),state={files:[],busy:false,serverAi:false,clientAi:false,session:null},videoTargets=new Set(['mp4','webm','mov','mkv','avi','gif','png-sequence','jpg-sequence']),labels={png:'PNG',jpg:'JPG',webp:'WEBP',bmp:'BMP',tiff:'TIFF',gif:'GIF',pdf:'PDF',txt:'TXT',md:'Markdown',csv:'CSV',json:'JSON',mp4:'MP4',webm:'WEBM',mov:'MOV',mkv:'MKV',avi:'AVI','png-sequence':'PNG Sequence','jpg-sequence':'JPG Sequence',mp3:'MP3',wav:'WAV',flac:'FLAC',m4a:'M4A',ogg:'OGG'};
-const modelUrl='https://huggingface.co/skillsafe-ai/realesrgan-x4plus/resolve/main/model_fp16.onnx';
-const clientImageTargets=new Set(['png','jpg','webp']),clientImageExtensions=new Set(['png','jpg','jpeg','webp']);
+const $=s=>document.querySelector(s);
+const state={files:[],busy:false,serverAi:false,clientAi:false,session:null,profile:null,maxFiles:0};
+const videoTargets=new Set(['mp4','webm','mov','mkv','avi','gif','png-sequence','jpg-sequence']);
+const labels={source:'원본',quality:'고품질',balanced:'균형',small:'작은 용량',custom:'직접 지정',fit:'맞추기',fill:'채우기',stretch:'늘리기','4k':'4K','4k-uhd':'4K UHD',qhd:'QHD',fhd:'FHD',hd:'HD',sd:'SD',png:'PNG',jpg:'JPG',webp:'WEBP',bmp:'BMP',tiff:'TIFF',gif:'GIF',pdf:'PDF',txt:'TXT',md:'Markdown',csv:'CSV',json:'JSON',mp4:'MP4',webm:'WEBM',mov:'MOV',mkv:'MKV',avi:'AVI','png-sequence':'PNG Sequence',mp3:'MP3',wav:'WAV',flac:'FLAC',m4a:'M4A',ogg:'OGG','jpg-sequence':'JPG Sequence'};
+// Browser decoders are platform-specific; conversion/output rules come from the app engine.
+const clientImageExtensions=new Set(['png','jpg','jpeg','webp']);
 const fileInput=$('#fileInput'),dropZone=$('#dropZone'),target=$('#target'),resolution=$('#resolution'),convertButton=$('#convertButton');
-fetch('/api/health').then(r=>r.json()).then(info=>{state.serverAi=info.ai_upscale;state.clientAi=Boolean(navigator.gpu&&window.ort?.InferenceSession&&window.JSZip);$('#version').textContent=`Tosun Flux Web · v${info.version}`;refreshAiOptions()}).catch(()=>{$('#engineBadge').textContent='서버 연결 실패';refreshAiOptions()});
-fileInput.addEventListener('change',()=>addFiles(fileInput.files));dropZone.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' ')fileInput.click()});for(const event of['dragenter','dragover'])dropZone.addEventListener(event,e=>{e.preventDefault();dropZone.classList.add('dragging')});for(const event of['dragleave','drop'])dropZone.addEventListener(event,e=>{e.preventDefault();dropZone.classList.remove('dragging')});dropZone.addEventListener('drop',e=>addFiles(e.dataTransfer.files));$('#clearButton').addEventListener('click',()=>{state.files=[];renderFiles();refreshTargets()});resolution.addEventListener('change',updateResolution);target.addEventListener('change',()=>{$('#fpsWrap').hidden=!videoTargets.has(target.value);refreshAiOptions()});convertButton.addEventListener('click',convert);
-function addFiles(items){const known=new Set(state.files.map(file=>`${file.name}:${file.size}:${file.lastModified}`));for(const file of items){const key=`${file.name}:${file.size}:${file.lastModified}`;if(!known.has(key)&&state.files.length<20){state.files.push(file);known.add(key)}}fileInput.value='';renderFiles();refreshTargets()}
-function renderFiles(){const list=$('#fileList');list.replaceChildren(...state.files.map((file,index)=>{const item=document.createElement('li'),name=document.createElement('span'),size=document.createElement('span'),remove=document.createElement('button');name.className='file-name';name.textContent=file.name;size.className='file-size';size.textContent=formatBytes(file.size);remove.className='remove';remove.type='button';remove.textContent='×';remove.setAttribute('aria-label',`${file.name} 삭제`);remove.onclick=()=>{state.files.splice(index,1);renderFiles();refreshTargets()};item.append(name,size,remove);return item}));const total=state.files.reduce((sum,file)=>sum+file.size,0);$('#fileSummary').textContent=state.files.length?`${state.files.length}개 · ${formatBytes(total)}`:'파일이 없습니다';$('#clearButton').disabled=state.busy||!state.files.length;convertButton.disabled=state.busy||!state.files.length||!target.value}
-async function refreshTargets(){target.replaceChildren();target.disabled=true;if(!state.files.length){renderFiles();refreshAiOptions();return}try{const response=await fetch('/api/targets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.files.map(f=>f.name))}),payload=await response.json();for(const value of payload.targets)target.add(new Option(labels[value]||value,value));target.disabled=!payload.targets.length;setStatus(payload.targets.length?'설정을 선택하고 변환을 시작하세요.':'함께 변환할 수 있는 공통 출력 형식이 없습니다.')}catch{setStatus('출력 형식을 확인하지 못했습니다.')}target.dispatchEvent(new Event('change'));renderFiles()}
-function canClientUpscale(){return state.clientAi&&state.files.length>0&&clientImageTargets.has(target.value)&&state.files.every(file=>clientImageExtensions.has(file.name.split('.').pop().toLowerCase()))}
-function refreshAiOptions(){const available=state.serverAi||state.clientAi;$('#engineBadge').textContent=state.clientAi?'WebGPU 로컬 AI':state.serverAi?'서버 AI 엔진':'일반 변환 모드';for(const[value,label]of[['scale-2','2x AI 업스케일'],['scale-4','4x AI 업스케일']]){const option=resolution.querySelector(`option[value="${value}"]`),usable=state.serverAi||canClientUpscale()||(state.clientAi&&!state.files.length);option.disabled=!usable;option.textContent=usable?label:`${label} · 현재 형식 미지원`}if(!available&&resolution.value.startsWith('scale-'))resolution.value='source';if(resolution.selectedOptions[0]?.disabled)resolution.value='source';updateResolution()}
-function updateResolution(){const custom=resolution.value==='custom',scale=resolution.value.startsWith('scale-');$('#customSize').hidden=!custom;$('#aspect').disabled=custom||scale}
-async function convert(){if(state.busy||!state.files.length||!target.value)return;const custom=resolution.value==='custom';if(custom&&(!$('#width').value||!$('#height').value)){setStatus('직접 해상도의 가로와 세로를 입력하세요.');return}if(resolution.value.startsWith('scale-')&&canClientUpscale()){try{await convertWithWebGpu(Number(resolution.value.slice(-1)));return}catch(error){finish();if(!state.serverAi){setStatus(error.message||'WebGPU 업스케일에 실패했습니다.');setProgress(0);return}setStatus('로컬 GPU를 사용할 수 없어 서버 AI 엔진으로 전환합니다.')}}convertOnServer(custom)}
-async function convertWithWebGpu(scale){state.busy=true;renderFiles();convertButton.textContent='업스케일 중…';$('#progressBar').classList.add('indeterminate');setStatus('WebGPU 엔진과 Real-ESRGAN 모델을 준비하고 있습니다. 첫 실행은 약 32MB를 다운로드합니다.');await webGpuSession();$('#progressBar').classList.remove('indeterminate');const results=[];for(let index=0;index<state.files.length;index++){const file=state.files[index];setStatus(`${file.name} · ${scale}x WebGPU 업스케일 중`);const blob=await upscaleImage(file,scale,amount=>setProgress((index+amount)/state.files.length*90));results.push({name:`${file.name.replace(/\.[^.]+$/,'')}-${scale}x.${target.value}`,blob});setProgress((index+1)/state.files.length*90)}await downloadLocalResults(results);setProgress(100);setStatus(`${results.length}개 파일의 로컬 GPU 업스케일을 완료했습니다.`);finish()}
-async function webGpuSession(){if(state.session)return state.session;ort.env.wasm.numThreads=1;ort.env.wasm.wasmPaths='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';state.session=await ort.InferenceSession.create(modelUrl,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});return state.session}
-async function upscaleImage(file,scale,onProgress){const bitmap=await createImageBitmap(file);try{if(bitmap.width*scale>16384||bitmap.height*scale>16384)throw new Error(`${file.name}: 결과 한 변은 16384픽셀을 넘을 수 없습니다.`);const source=document.createElement('canvas'),output=document.createElement('canvas'),tileCanvas=document.createElement('canvas');source.width=bitmap.width;source.height=bitmap.height;source.getContext('2d',{willReadFrequently:true}).drawImage(bitmap,0,0);output.width=bitmap.width*scale;output.height=bitmap.height*scale;const sourceContext=source.getContext('2d',{willReadFrequently:true}),outputContext=output.getContext('2d'),session=await webGpuSession(),tileSize=64,padding=8,columns=Math.ceil(bitmap.width/tileSize),rows=Math.ceil(bitmap.height/tileSize),total=columns*rows;let completed=0;for(let y=0;y<bitmap.height;y+=tileSize){for(let x=0;x<bitmap.width;x+=tileSize){const coreWidth=Math.min(tileSize,bitmap.width-x),coreHeight=Math.min(tileSize,bitmap.height-y),left=Math.max(0,x-padding),top=Math.max(0,y-padding),right=Math.min(bitmap.width,x+coreWidth+padding),bottom=Math.min(bitmap.height,y+coreHeight+padding),width=right-left,height=bottom-top,image=sourceContext.getImageData(left,top,width,height),pixels=width*height,inputData=new Float32Array(pixels*3);for(let pixel=0;pixel<pixels;pixel++){inputData[pixel]=image.data[pixel*4]/255;inputData[pixels+pixel]=image.data[pixel*4+1]/255;inputData[pixels*2+pixel]=image.data[pixel*4+2]/255}const input=new ort.Tensor('float32',inputData,[1,3,height,width]),results=await session.run({[session.inputNames[0]]:input}),result=results[session.outputNames[0]],nativeWidth=width*4,nativeHeight=height*4,rgba=new Uint8ClampedArray(nativeWidth*nativeHeight*4),nativePixels=nativeWidth*nativeHeight;for(let pixel=0;pixel<nativePixels;pixel++){rgba[pixel*4]=channel(result.data[pixel]);rgba[pixel*4+1]=channel(result.data[nativePixels+pixel]);rgba[pixel*4+2]=channel(result.data[nativePixels*2+pixel]);rgba[pixel*4+3]=255}tileCanvas.width=nativeWidth;tileCanvas.height=nativeHeight;tileCanvas.getContext('2d').putImageData(new ImageData(rgba,nativeWidth,nativeHeight),0,0);outputContext.drawImage(tileCanvas,(x-left)*4,(y-top)*4,coreWidth*4,coreHeight*4,x*scale,y*scale,coreWidth*scale,coreHeight*scale);input.dispose?.();result.dispose?.();completed++;onProgress(completed/total);await new Promise(requestAnimationFrame)}}outputContext.globalCompositeOperation='destination-in';outputContext.drawImage(bitmap,0,0,output.width,output.height);outputContext.globalCompositeOperation='source-over';return await canvasBlob(output,target.value,$('#optimize').value)}finally{bitmap.close()}}
+
+fetch('/api/health').then(r=>{if(!r.ok)throw new Error();return r.json()}).then(info=>{
+    state.profile=info.profile;state.maxFiles=info.max_files;state.serverAi=info.ai_upscale;
+    state.clientAi=Boolean(state.profile.upscale.webgpu_model_url&&navigator.gpu&&window.ort?.InferenceSession);
+    $('#version').textContent='Tosun Flux Web · v'+info.version;
+    $('#fileLimit').textContent='최대 '+state.maxFiles+'개';
+    applyProfile();refreshAiOptions();renderFiles();
+}).catch(()=>{setStatus('앱 엔진의 변환 설정을 불러오지 못했습니다. 새로고침해 주세요.');$('#engineBadge').textContent='서버 연결 실패'});
+
+function choices(select,entries){select.replaceChildren(...entries.map(([value,label])=>new Option(label,value)));select.disabled=false}
+function applyProfile(){
+    const profile=state.profile;
+    choices(resolution,[['source','원본'],...profile.upscale.factors.map(f=>['scale-'+f,f+'x AI 업스케일']),...Object.entries(profile.resolutions).map(([key,size])=>[key,(labels[key]||key)+' · '+size.join('×')]),['custom','직접 지정']]);
+    choices($('#optimize'),profile.optimizations.map(key=>[key,key==='source'?'원본 유지':labels[key]||key]));
+    choices($('#aspect'),['source',...profile.aspects].map(key=>[key,labels[key]||key]));
+    choices($('#fps'),profile.frame_rates.map(key=>[key,labels[key]||key]));
+    $('.segmented').replaceChildren(...profile.fit_modes.map((key,index)=>{
+        const label=document.createElement('label'),input=document.createElement('input'),span=document.createElement('span');
+        input.type='radio';input.name='fit';input.value=key;input.checked=index===0;span.textContent=labels[key]||key;label.append(input,span);return label;
+    }));
+    for(const input of[$('#width'),$('#height')])input.max=profile.max_output_dimension;
+}
+fileInput.addEventListener('change',()=>addFiles(fileInput.files));
+dropZone.addEventListener('keydown',e=>{if(!state.busy&&(e.key==='Enter'||e.key===' '))fileInput.click()});
+for(const event of['dragenter','dragover'])dropZone.addEventListener(event,e=>{e.preventDefault();if(!state.busy)dropZone.classList.add('dragging')});
+for(const event of['dragleave','drop'])dropZone.addEventListener(event,e=>{e.preventDefault();dropZone.classList.remove('dragging')});
+dropZone.addEventListener('drop',e=>addFiles(e.dataTransfer.files));
+$('#clearButton').addEventListener('click',()=>{state.files=[];renderFiles();refreshTargets()});
+resolution.addEventListener('change',updateResolution);
+target.addEventListener('change',()=>{$('#fpsWrap').hidden=!videoTargets.has(target.value);refreshAiOptions()});
+convertButton.addEventListener('click',convert);
+
+function addFiles(items){
+    if(state.busy||!state.profile)return;
+    const known=new Set(state.files.map(file=>file.name+':'+file.size+':'+file.lastModified));
+    for(const file of items){const key=file.name+':'+file.size+':'+file.lastModified;if(!known.has(key)&&state.files.length<state.maxFiles){state.files.push(file);known.add(key)}}
+    fileInput.value='';renderFiles();refreshTargets();
+}
+function renderFiles(){
+    $('#fileList').replaceChildren(...state.files.map((file,index)=>{
+        const item=document.createElement('li'),name=document.createElement('span'),size=document.createElement('span'),remove=document.createElement('button');
+        name.className='file-name';name.textContent=file.name;size.className='file-size';size.textContent=formatBytes(file.size);
+        remove.className='remove';remove.type='button';remove.textContent='×';remove.disabled=state.busy;remove.setAttribute('aria-label',file.name+' 삭제');
+        remove.onclick=()=>{state.files.splice(index,1);renderFiles();refreshTargets()};item.append(name,size,remove);return item;
+    }));
+    const total=state.files.reduce((sum,file)=>sum+file.size,0);
+    $('#fileSummary').textContent=state.files.length?state.files.length+'개 · '+formatBytes(total):'파일이 없습니다';
+    $('#clearButton').disabled=state.busy||!state.files.length;
+    convertButton.disabled=state.busy||!state.profile||!state.files.length||!target.value;
+    fileInput.disabled=state.busy||!state.profile;
+    for(const input of document.querySelectorAll('.settings-panel select,.settings-panel input'))input.disabled=state.busy||!state.profile;
+    target.disabled=state.busy||!target.options.length;
+    updateResolution();
+}
+async function refreshTargets(){
+    target.replaceChildren();target.disabled=true;
+    if(!state.files.length){renderFiles();refreshAiOptions();return}
+    try{
+        const response=await fetch('/api/targets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.files.map(f=>f.name))});
+        if(!response.ok)throw new Error();
+        const payload=await response.json();
+        for(const value of payload.targets)target.add(new Option(labels[value]||value,value));
+        setStatus(payload.targets.length?'설정을 선택하고 변환을 시작하세요.':'함께 변환할 수 있는 공통 출력 형식이 없습니다.');
+    }catch{setStatus('출력 형식을 확인하지 못했습니다.')}
+    renderFiles();target.dispatchEvent(new Event('change'));
+}
+function canClientUpscale(){return state.clientAi&&state.files.length>0&&state.profile.image_targets.includes(target.value)&&state.files.every(file=>clientImageExtensions.has(file.name.split('.').pop().toLowerCase()))}
+function refreshAiOptions(){
+    if(!state.profile)return;
+    $('#engineBadge').textContent=state.clientAi?'WebGPU · 앱 엔진 저장':state.serverAi?'서버 AI 엔진':'일반 변환 모드';
+    for(const factor of state.profile.upscale.factors){
+        const option=resolution.querySelector('option[value="scale-'+factor+'"]'),usable=state.serverAi||canClientUpscale()||(state.clientAi&&!state.files.length);
+        option.disabled=!usable;option.textContent=usable?factor+'x AI 업스케일':factor+'x AI 업스케일 · 현재 형식 미지원';
+    }
+    if(resolution.selectedOptions[0]?.disabled)resolution.value='source';
+    updateResolution();
+}
+function updateResolution(){const custom=resolution.value==='custom',scale=resolution.value.startsWith('scale-');$('#customSize').hidden=!custom;$('#aspect').disabled=state.busy||!state.profile||custom||scale}
+async function convert(){
+    if(state.busy||!state.profile||!state.files.length||!target.value)return;
+    const custom=resolution.value==='custom',scale=resolution.value.startsWith('scale-')?Number(resolution.value.slice(6)):1;
+    if(custom&&(!$('#width').checkValidity()||!$('#height').checkValidity()||!$('#width').value||!$('#height').value)){setStatus('직접 해상도는 가로·세로 2~'+state.profile.max_output_dimension+' 범위로 입력하세요.');return}
+    const files=state.files.slice(),options={target:target.value,optimize:$('#optimize').value,resolution:custom||scale!==1?'source':resolution.value,aspect:custom||scale!==1?'source':$('#aspect').value,fit:document.querySelector('input[name=fit]:checked').value,fps:$('#fpsWrap').hidden?'source':$('#fps').value,scale_factor:scale};
+    if(custom){options.width=$('#width').value;options.height=$('#height').value}
+    const local=scale!==1&&canClientUpscale();
+    state.busy=true;renderFiles();convertButton.textContent=local?'업스케일 중…':'변환 중…';setProgress(0);
+    try{
+        if(local){
+            const upscaled=await convertWithWebGpu(files,scale);
+            await convertOnServer(upscaled,{...options,scale_factor:1,fps:'source',webgpu_scale:scale});
+        }else await convertOnServer(files,options);
+    }catch(error){setStatus(error.message||'변환에 실패했습니다.');setProgress(0)}
+    finally{finish()}
+}
+async function convertWithWebGpu(files,scale){
+    $('#progressBar').classList.add('indeterminate');
+    setStatus('WebGPU 엔진과 Real-ESRGAN 모델을 준비하고 있습니다. 첫 실행은 약 32MB를 다운로드합니다.');
+    await webGpuSession();$('#progressBar').classList.remove('indeterminate');
+    const results=[];
+    for(let index=0;index<files.length;index++){
+        const file=files[index];setStatus(file.name+' · '+scale+'x WebGPU 업스케일 중');
+        const blob=await upscaleImage(file,scale,amount=>setProgress((index+amount)/files.length*90));
+        results.push(new File([blob],file.name.replace(/\.[^.]+$/,'')+'.png',{type:'image/png'}));
+    }
+    return results;
+}
+async function webGpuSession(){
+    if(state.session)return state.session;
+    ort.env.wasm.numThreads=1;ort.env.wasm.wasmPaths='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
+    state.session=await ort.InferenceSession.create(state.profile.upscale.webgpu_model_url,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
+    return state.session;
+}
+async function upscaleImage(file,scale,onProgress){
+    const bitmap=await createImageBitmap(file);
+    try{
+        const nativeScale=state.profile.upscale.native_scale,limit=state.profile.max_output_dimension;
+        if(bitmap.width*scale>limit||bitmap.height*scale>limit)throw new Error(file.name+': 결과 한 변은 '+limit+'픽셀을 넘을 수 없습니다.');
+        if(bitmap.width*nativeScale>limit||bitmap.height*nativeScale>limit)throw new Error(file.name+': WebGPU 중간 이미지가 브라우저 크기 제한을 넘습니다.');
+        const source=document.createElement('canvas'),output=document.createElement('canvas'),tileCanvas=document.createElement('canvas');
+        source.width=bitmap.width;source.height=bitmap.height;source.getContext('2d',{willReadFrequently:true}).drawImage(bitmap,0,0);
+        // Keep the native output; the app engine performs the same 2x Lanczos reduction.
+        output.width=bitmap.width*nativeScale;output.height=bitmap.height*nativeScale;
+        const sourceContext=source.getContext('2d',{willReadFrequently:true}),outputContext=output.getContext('2d'),session=await webGpuSession(),tileSize=64,padding=8,columns=Math.ceil(bitmap.width/tileSize),rows=Math.ceil(bitmap.height/tileSize),total=columns*rows;
+        let completed=0;
+        for(let y=0;y<bitmap.height;y+=tileSize){for(let x=0;x<bitmap.width;x+=tileSize){
+            const coreWidth=Math.min(tileSize,bitmap.width-x),coreHeight=Math.min(tileSize,bitmap.height-y),left=Math.max(0,x-padding),top=Math.max(0,y-padding),right=Math.min(bitmap.width,x+coreWidth+padding),bottom=Math.min(bitmap.height,y+coreHeight+padding),width=right-left,height=bottom-top,image=sourceContext.getImageData(left,top,width,height),pixels=width*height,inputData=new Float32Array(pixels*3);
+            for(let pixel=0;pixel<pixels;pixel++){inputData[pixel]=image.data[pixel*4]/255;inputData[pixels+pixel]=image.data[pixel*4+1]/255;inputData[pixels*2+pixel]=image.data[pixel*4+2]/255}
+            const input=new ort.Tensor('float32',inputData,[1,3,height,width]);
+            const results=await session.run({[session.inputNames[0]]:input}),result=results[session.outputNames[0]],nativeWidth=width*nativeScale,nativeHeight=height*nativeScale,rgba=new Uint8ClampedArray(nativeWidth*nativeHeight*4),nativePixels=nativeWidth*nativeHeight;
+            if(result.type!=='float32'||result.dims[2]!==nativeHeight||result.dims[3]!==nativeWidth)throw new Error('WebGPU 모델 출력이 앱의 업스케일 규격과 다릅니다.');
+            for(let pixel=0;pixel<nativePixels;pixel++){rgba[pixel*4]=channel(result.data[pixel]);rgba[pixel*4+1]=channel(result.data[nativePixels+pixel]);rgba[pixel*4+2]=channel(result.data[nativePixels*2+pixel]);rgba[pixel*4+3]=255}
+            tileCanvas.width=nativeWidth;tileCanvas.height=nativeHeight;tileCanvas.getContext('2d').putImageData(new ImageData(rgba,nativeWidth,nativeHeight),0,0);
+            outputContext.drawImage(tileCanvas,(x-left)*nativeScale,(y-top)*nativeScale,coreWidth*nativeScale,coreHeight*nativeScale,x*nativeScale,y*nativeScale,coreWidth*nativeScale,coreHeight*nativeScale);
+            input.dispose?.();result.dispose?.();completed++;onProgress(completed/total);await new Promise(requestAnimationFrame);
+        }}
+        outputContext.globalCompositeOperation='destination-in';outputContext.drawImage(bitmap,0,0,output.width,output.height);
+        return await new Promise((resolve,reject)=>output.toBlob(blob=>blob?resolve(blob):reject(new Error('출력 이미지를 만들지 못했습니다.')),'image/png'));
+    }finally{bitmap.close()}
+}
 function channel(value){return Math.max(0,Math.min(255,Math.round(value*255)))}
-async function canvasBlob(canvas,format,optimize){let rendered=canvas;if(format==='jpg'){rendered=document.createElement('canvas');rendered.width=canvas.width;rendered.height=canvas.height;const context=rendered.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,rendered.width,rendered.height);context.drawImage(canvas,0,0)}const quality={source:.92,quality:.96,balanced:.86,small:.72}[optimize]||.92;return await new Promise((resolve,reject)=>rendered.toBlob(blob=>blob?resolve(blob):reject(new Error('출력 이미지를 만들지 못했습니다.')),format==='png'?'image/png':format==='jpg'?'image/jpeg':'image/webp',quality))}
-async function downloadLocalResults(results){if(results.length===1){downloadBlob(results[0].blob,results[0].name);return}// ponytail: ZIP creation buffers finished images; switch to a streaming archive only if large batches become a measured problem.
-const archive=new JSZip();results.forEach((result,index)=>archive.file(`${String(index+1).padStart(2,'0')}-${result.name}`,result.blob));setStatus('완료된 이미지를 ZIP으로 묶고 있습니다.');const blob=await archive.generateAsync({type:'blob',compression:'DEFLATE'},metadata=>setProgress(90+metadata.percent/10));downloadBlob(blob,'Tosun-Flux-Upscaled.zip')}
-function downloadBlob(blob,name){const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),30000)}
-function convertOnServer(custom){const data=new FormData();state.files.forEach(file=>data.append('files',file,file.name));data.append('target',target.value);data.append('optimize',$('#optimize').value);data.append('resolution',custom||resolution.value.startsWith('scale-')?'source':resolution.value);data.append('aspect',custom||resolution.value.startsWith('scale-')?'source':$('#aspect').value);data.append('fit',document.querySelector('input[name=fit]:checked').value);data.append('fps',$('#fps').value);data.append('scale_factor',resolution.value==='scale-2'?'2':resolution.value==='scale-4'?'4':'1');if(custom){data.append('width',$('#width').value);data.append('height',$('#height').value)}const request=new XMLHttpRequest();request.open('POST','/api/convert');request.responseType='blob';request.upload.onprogress=e=>{if(e.lengthComputable){setProgress(e.loaded/e.total*100);setStatus(`업로드 중 · ${Math.round(e.loaded/e.total*100)}%`)}};request.upload.onload=()=>{$('#progressBar').classList.add('indeterminate');setStatus('변환 중입니다. 파일 크기에 따라 시간이 걸릴 수 있습니다.')};request.onload=async()=>{if(request.status>=200&&request.status<300){const name=downloadName(request.getResponseHeader('Content-Disposition'))||`Tosun-Flux.${target.value}`;downloadBlob(request.response,name);setProgress(100);setStatus(`${name} 다운로드를 시작했습니다.`)}else{const message=await request.response.text().then(text=>{try{return JSON.parse(text).detail}catch{return text}});setStatus(message||'변환에 실패했습니다.');setProgress(0)}finish()};request.onerror=()=>{setStatus('서버에 연결하지 못했습니다.');setProgress(0);finish()};state.busy=true;renderFiles();convertButton.textContent='변환 중…';request.send(data)}
-function finish(){state.busy=false;$('#progressBar').classList.remove('indeterminate');convertButton.textContent='변환 시작';renderFiles()}function setStatus(text){$('#statusText').textContent=text}function setProgress(value){$('#progressBar').style.width=`${value}%`}function formatBytes(bytes){if(!bytes)return'0 B';const units=['B','KB','MB','GB'],i=Math.min(Math.floor(Math.log(bytes)/Math.log(1024)),3);return`${(bytes/1024**i).toFixed(i?1:0)} ${units[i]}`}function downloadName(header){if(!header)return null;const utf=header.match(/filename\*=UTF-8''([^;]+)/i);if(utf)return decodeURIComponent(utf[1]);const plain=header.match(/filename="?([^";]+)"?/i);return plain?.[1]||null}
+function downloadBlob(blob,name){
+    const link=$('#downloadLink'),previous=link.getAttribute('href');
+    if(previous)URL.revokeObjectURL(previous);
+    link.href=URL.createObjectURL(blob);link.download=name;link.hidden=false;link.textContent=name+' 다운로드';link.click();
+}
+function convertOnServer(files,options){
+    const data=new FormData();files.forEach(file=>data.append('files',file,file.name));
+    for(const[key,value]of Object.entries(options))data.append(key,String(value));
+    return new Promise((resolve,reject)=>{
+        const request=new XMLHttpRequest(),local=options.webgpu_scale!==undefined;
+        request.open('POST','/api/convert');request.responseType='blob';
+        request.upload.onprogress=e=>{if(e.lengthComputable){setProgress(local?90+e.loaded/e.total*10:e.loaded/e.total*100);setStatus((local?'확대 결과를 앱 엔진에 전송':'업로드')+' 중 · '+Math.round(e.loaded/e.total*100)+'%')}};
+        request.upload.onload=()=>{$('#progressBar').classList.add('indeterminate');setStatus(local?'앱과 동일한 엔진으로 압축·저장 중입니다.':'변환 중입니다. 파일 크기에 따라 시간이 걸릴 수 있습니다.')};
+        request.onload=async()=>{
+            if(request.status>=200&&request.status<300){
+                const name=downloadName(request.getResponseHeader('Content-Disposition'))||'Tosun-Flux.'+options.target;
+                downloadBlob(request.response,name);setProgress(100);setStatus(name+' 다운로드를 시작했습니다.');resolve();
+            }else{
+                const text=await request.response.text();let message=text;
+                try{message=JSON.parse(text).detail}catch{}
+                reject(new Error(typeof message==='string'?message:'변환 요청을 처리하지 못했습니다.'));
+            }
+        };
+        request.onerror=()=>reject(new Error('서버에 연결하지 못했습니다.'));
+        request.send(data);
+    });
+}
+function finish(){state.busy=false;$('#progressBar').classList.remove('indeterminate');convertButton.textContent='변환 시작';renderFiles();refreshAiOptions()}
+function setStatus(text){$('#statusText').textContent=text}
+function setProgress(value){$('#progressBar').style.width=value+'%'}
+function formatBytes(bytes){if(!bytes)return'0 B';const units=['B','KB','MB','GB'],i=Math.min(Math.floor(Math.log(bytes)/Math.log(1024)),3);return(bytes/1024**i).toFixed(i?1:0)+' '+units[i]}
+function downloadName(header){if(!header)return null;const utf=header.match(/filename\*=UTF-8''([^;]+)/i);if(utf)return decodeURIComponent(utf[1]);const plain=header.match(/filename="?([^";]+)"?/i);return plain?.[1]||null}

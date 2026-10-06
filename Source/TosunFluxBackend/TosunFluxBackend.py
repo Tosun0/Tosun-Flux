@@ -4,7 +4,11 @@ import argparse
 import json
 from pathlib import Path
 
-from TosunFluxConverter import RESOLUTIONS, ConversionOptions, common_targets, convert_files, source_metadata
+from TosunFluxConverter import (
+    ASPECTS, FIT_MODES, FRAME_RATES, MAX_OUTPUT_DIMENSION, OPTIMIZATION_MODES,
+    RESOLUTIONS, UPSCALE_ENGINES, UPSCALE_FACTORS, ConversionOptions,
+    common_targets, conversion_profile, convert_files, source_metadata,
+)
 
 
 def emit(payload: dict[str, object]) -> None:
@@ -23,21 +27,21 @@ def main() -> int:
     convert_parser = subparsers.add_parser("convert")
     convert_parser.add_argument("--output", required=True)
     convert_parser.add_argument("--target", required=True)
-    convert_parser.add_argument("--optimize", choices=("source", "quality", "balanced", "small"), default="source")
+    convert_parser.add_argument("--optimize", choices=OPTIMIZATION_MODES, default="source")
     convert_parser.add_argument("--resolution", choices=("source", *RESOLUTIONS), default="source")
-    convert_parser.add_argument("--aspect", choices=("source", "16:9", "9:16", "1:1", "4:3", "3:4"), default="source")
-    convert_parser.add_argument("--fit", choices=("fit", "fill", "stretch"), default="fit")
+    convert_parser.add_argument("--aspect", choices=("source", *ASPECTS), default="source")
+    convert_parser.add_argument("--fit", choices=FIT_MODES, default="fit")
     convert_parser.add_argument("--width", type=int)
     convert_parser.add_argument("--height", type=int)
-    convert_parser.add_argument("--fps", choices=("source", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60"), default="source")
-    convert_parser.add_argument("--scale-factor", type=float, choices=(1.0, 2.0, 4.0), default=1.0)
-    convert_parser.add_argument("--upscale-engine", choices=("resize", "ai"), default="resize")
+    convert_parser.add_argument("--fps", choices=FRAME_RATES, default="source")
+    convert_parser.add_argument("--scale-factor", type=float, choices=UPSCALE_FACTORS, default=1.0)
+    convert_parser.add_argument("--upscale-engine", choices=UPSCALE_ENGINES, default="resize")
     convert_parser.add_argument("--overwrite", action="store_true")
     convert_parser.add_argument("files", nargs="+")
 
     args = parser.parse_args()
     if args.command == "health":
-        emit({"status": "ok", "product": "Tosun Flux", "version": "1.2.6"})
+        emit({"status": "ok", "product": "Tosun Flux", "version": "1.2.6", "profile": conversion_profile()})
         return 0
 
     files = [Path(item) for item in args.files]
@@ -60,8 +64,8 @@ def main() -> int:
 
     if (args.width is None) != (args.height is None):
         parser.error("--width와 --height는 함께 지정해야 합니다.")
-    if args.width is not None and not (2 <= args.width <= 16384 and 2 <= args.height <= 16384):
-        parser.error("직접 해상도는 가로·세로 2~16384 범위여야 합니다.")
+    if args.width is not None and not (2 <= args.width <= MAX_OUTPUT_DIMENSION and 2 <= args.height <= MAX_OUTPUT_DIMENSION):
+        parser.error(f"직접 해상도는 가로·세로 2~{MAX_OUTPUT_DIMENSION} 범위여야 합니다.")
 
     options = ConversionOptions(args.optimize, args.resolution, args.aspect, args.fit, args.width, args.height, args.fps, args.scale_factor, args.upscale_engine)
     results = convert_files(files, Path(args.output), args.target, progress, options, args.overwrite)

@@ -92,7 +92,11 @@ Real-ESRGAN macOS portable 패키지는 공식 릴리즈의 `realesrgan-ncnn-vul
 
 ## 웹 실행과 배포
 
-웹 UI는 일반 변환에 기존 `TosunFluxConverter.py`를 그대로 호출합니다. Chrome·Edge의 이미지 2x/4x 업스케일은 ONNX Runtime WebGPU와 Real-ESRGAN x4plus 모델로 사용자 GPU에서 처리하며, 미지원 환경에서는 서버 AI 엔진을 사용합니다. 개발 환경에서는 다음 명령으로 실행합니다.
+웹 UI는 기존 `TosunFluxConverter.py`의 변환 프로파일을 `/api/health`에서 받아 해상도·화면비·배율·출력 형식·프레임·크기 제한을 구성합니다. 앱 엔진의 공통 기준을 바꾸고 웹을 재배포하면 웹 설정도 함께 반영됩니다. WPF 화면 배치·설치기 같은 플랫폼 전용 코드는 공유하지 않습니다.
+
+Chrome·Edge의 이미지 2x/4x 확대 연산은 ONNX Runtime WebGPU와 Real-ESRGAN x4plus 모델로 사용자 GPU에서 처리합니다. 네이티브 4x PNG 결과를 서버에 전송한 뒤, 앱과 같은 Python 엔진이 2x Lanczos 축소·JPG 품질·WEBP 무손실·PNG 압축·파일명·ZIP 출력을 처리합니다. 따라서 WebGPU 사용 시에도 최종 저장에는 서버 연결과 이미지 전송이 필요하며, 서버의 업로드 제한이 적용됩니다. 브라우저에서 지원하지 않는 입력 디코더나 모델은 로컬 WebGPU로 처리할 수 없고, 서버 AI 엔진이 설치된 경우에만 서버 업스케일 옵션을 사용할 수 있습니다.
+
+개발 환경에서는 다음 명령으로 실행합니다.
 
 ```powershell
 python -m pip install -r .\Source\TosunFluxWeb\requirements-dev.txt

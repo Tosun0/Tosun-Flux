@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -11,6 +12,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using Microsoft.Win32;
+using TosunFluxShared;
 
 namespace TosunFlux;
 
@@ -18,7 +20,9 @@ public partial class MainWindow : Window
 {
     private const string SettingsKeyPath = @"Software\Tosun\Tosun Flux";
     private const string OutputPathValueName = "OutputPath";
-    private readonly List<string> _files = [];
+    private readonly ObservableCollection<ConversionQueueItem> _queue = [];
+    private List<string> _files => _queue.Where(file => file.State == QueueState.Waiting).Select(file => file.Path).ToList();
+    private bool _busy;
     private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private readonly System.Windows.Threading.DispatcherTimer _tosunSpeechTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private UpdateInfo? _availableUpdate;
@@ -44,6 +48,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        FilesList.ItemsSource = _queue;
         _tosunSpeechTimer.Tick += (_, _) =>
         {
             TosunSpeechBubble.Visibility = Visibility.Collapsed;
@@ -180,20 +185,17 @@ public partial class MainWindow : Window
     private async Task AddPathsAsync(IEnumerable<string> paths)
     {
         foreach (var path in paths.Where(File.Exists).Select(Path.GetFullPath))
-            if (!_files.Contains(path, StringComparer.OrdinalIgnoreCase))
-                _files.Add(path);
-
-        FilesList.Items.Clear();
-        foreach (var path in _files)
-            FilesList.Items.Add($"{Path.GetFileName(path)}   ·   {Path.GetExtension(path).TrimStart('.').ToUpperInvariant()}");
+            if (!_queue.Any(file => file.Path.Equals(path, StringComparison.OrdinalIgnoreCase)))
+                _queue.Add(new ConversionQueueItem(path));
         await RefreshTargetsAsync();
     }
 
     private async void ClearFiles_Click(object sender, RoutedEventArgs e)
     {
-        _files.Clear();
+        if (_busy)
+            return;
+        _queue.Clear();
         _sourceMetadata.Clear();
-        FilesList.Items.Clear();
         TargetBox.Items.Clear();
         TargetBox.SelectedIndex = -1;
         FileHint.Text = "지원 형식은 파일을 추가하면 자동으로 안내됩니다.";
@@ -205,19 +207,10 @@ public partial class MainWindow : Window
 
     private async void RemoveFile_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not System.Windows.Controls.Button button)
+        if (sender is not System.Windows.Controls.Button { Tag: ConversionQueueItem item } || !item.CanRemove)
             return;
-
-        if (ItemsControl.ContainerFromElement(FilesList, button) is not ListBoxItem item)
-            return;
-
-        var index = FilesList.ItemContainerGenerator.IndexFromContainer(item);
-        if (index < 0 || index >= _files.Count)
-            return;
-
-        _files.RemoveAt(index);
-        FilesList.Items.RemoveAt(index);
-        if (_files.Count == 0)
+        _queue.Remove(item);
+        if (_files.Count == 0 && !_busy)
         {
             _sourceMetadata.Clear();
             TargetBox.Items.Clear();
@@ -233,6 +226,16 @@ public partial class MainWindow : Window
     }
 
     private void TargetBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
+
+    private async void RetryFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { Tag: ConversionQueueItem item } || !item.CanRetry)
+            return;
+        item.SetState(QueueState.Waiting, "다시 대기 중");
+        _queue.Remove(item);
+        _queue.Add(item);
+        await RefreshTargetsAsync();
+    }
 
     private void OverwriteCheckBox_Changed(object sender, RoutedEventArgs e) => UpdateVisualSettings();
 
@@ -262,7 +265,7 @@ public partial class MainWindow : Window
 
     private void UpdateVisualSettings()
     {
-        if (!IsInitialized)
+        if (!IsInitialized || _busy)
             return;
         var supportsVisualOptions = _files.Count > 0 && _files.All(path => VisualExtensions.Contains(Path.GetExtension(path)));
         var supportsVideoOptions = _files.Count > 0 && _files.All(path => VideoExtensions.Contains(Path.GetExtension(path)));
@@ -559,11 +562,22 @@ public partial class MainWindow : Window
 
     private async Task RefreshTargetsAsync()
     {
+        if (_busy)
+        {
+            UpdateQueueStatus();
+            return;
+        }
+        var paths = _files;
+        var selectedKey = (TargetBox.SelectedItem as TargetChoice)?.Key;
         TargetBox.Items.Clear();
         _sourceMetadata.Clear();
         ConvertButton.IsEnabled = false;
-        if (_files.Count == 0)
+        if (paths.Count == 0)
+        {
+            UpdateQueueStatus();
+            UpdateVisualSettings();
             return;
+        }
         if (!File.Exists(BackendPath))
         {
             StatusText.Text = "변환 백엔드를 찾을 수 없습니다.";
@@ -573,13 +587,15 @@ public partial class MainWindow : Window
         try
         {
             var startInfo = BackendStartInfo("targets");
-            foreach (var file in _files)
+            foreach (var file in paths)
                 startInfo.ArgumentList.Add(file);
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("변환 백엔드를 실행할 수 없습니다.");
             var outputTask = process.StandardOutput.ReadToEndAsync();
             var errorTask = process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
             var output = await outputTask;
+            if (_busy || !paths.SequenceEqual(_files))
+                return;
             if (process.ExitCode != 0)
                 throw new InvalidOperationException((await errorTask).Trim());
             using var document = JsonDocument.Parse(output.Trim());
@@ -615,11 +631,11 @@ public partial class MainWindow : Window
 
         if (TargetBox.Items.Count > 0)
         {
-            var preferredTarget = NormalizeFormat(Path.GetExtension(_files[0]));
+            var preferredTarget = selectedKey ?? NormalizeFormat(Path.GetExtension(paths[0]));
             TargetBox.SelectedItem = TargetBox.Items.OfType<TargetChoice>().FirstOrDefault(choice => choice.Key == preferredTarget);
             if (TargetBox.SelectedIndex < 0)
                 TargetBox.SelectedIndex = 0;
-            FileHint.Text = $"{_files.Count}개 파일 · 공통 변환 형식 {TargetBox.Items.Count}개";
+            FileHint.Text = ConversionQueue.Summary(_queue);
             StatusText.Text = $"{_files.Count}개 파일을 추가했습니다.";
             ConvertButton.IsEnabled = true;
         }
@@ -633,15 +649,12 @@ public partial class MainWindow : Window
 
     private async void Convert_Click(object sender, RoutedEventArgs e)
     {
-        if (_files.Count == 0 || TargetBox.SelectedItem is not TargetChoice selectedTarget)
+        if (_busy || _files.Count == 0 || TargetBox.SelectedItem is not TargetChoice selectedTarget)
             return;
         if (!TryGetCustomDimensions(out var customWidth, out var customHeight))
             return;
 
         SaveOutputPath();
-        ConvertButton.IsEnabled = false;
-        Progress.Maximum = _files.Count;
-        Progress.Value = 0;
         LogText.Clear();
         StatusText.Text = "변환 중…";
 
@@ -674,53 +687,22 @@ public partial class MainWindow : Window
             startInfo.ArgumentList.Add("--height");
             startInfo.ArgumentList.Add(customHeight.Value.ToString());
         }
-        foreach (var file in _files)
-            startInfo.ArgumentList.Add(file);
-
-        long outputBytes = 0;
+        _busy = true;
+        ConversionSettings.IsEnabled = false;
+        ConvertButton.IsEnabled = false;
+        ClearFilesButton.IsEnabled = false;
         try
         {
-            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("변환 백엔드를 실행할 수 없습니다.");
-            var errorTask = process.StandardError.ReadToEndAsync();
-            var success = 0;
-            while (await process.StandardOutput.ReadLineAsync() is { } line)
+            await ConversionQueue.RunAsync(_queue, startInfo, () =>
             {
-                using var document = JsonDocument.Parse(line);
-                var root = document.RootElement;
-                if (root.TryGetProperty("event", out var eventName) && eventName.GetString() == "progress")
-                {
-                    var index = root.GetProperty("index").GetInt32();
-                    var total = root.GetProperty("total").GetInt32();
-                    var source = Path.GetFileName(root.GetProperty("source").GetString());
-                    var error = root.GetProperty("error");
-                    Progress.Value = index;
-                    StatusText.Text = $"변환 중… {index}/{total}";
-                    if (error.ValueKind == JsonValueKind.Null)
-                    {
-                        success++;
-                        var outputs = root.GetProperty("outputs").EnumerateArray().Select(item => item.GetString()).Where(path => path is not null).Cast<string>().ToArray();
-                        var convertedBytes = outputs.Where(File.Exists).Sum(path => new FileInfo(path).Length);
-                        outputBytes += convertedBytes;
-                        AppendLog($"완료: {source} → {string.Join(", ", outputs.Select(Path.GetFileName))} · {FormatBytes(convertedBytes)}");
-                    }
-                    else
-                    {
-                        AppendLog($"실패: {source} — {error.GetString()}");
-                    }
-                }
-            }
-            await process.WaitForExitAsync();
-            var backendError = (await errorTask).Trim();
-            if (process.ExitCode != 0)
-            {
-                StatusText.Text = $"변환 실패 · {success}/{_files.Count}개";
-                if (backendError.Length > 0)
-                    AppendLog(backendError);
-            }
-            else
-            {
-                StatusText.Text = $"변환 완료 · {success}/{_files.Count}개";
-            }
+                UpdateQueueStatus();
+                if (_queue.FirstOrDefault(file => file.IsProcessing) is { } active)
+                    StatusText.Text = $"처리 중 · {active.Name}";
+            });
+            foreach (var file in _queue.Where(file => file.State is QueueState.Completed or QueueState.Failed))
+                AppendLog($"{file.Status}: {file.Name} — {file.Detail}");
+            StatusText.Text = ConversionQueue.Summary(_queue);
+            var outputBytes = _queue.SelectMany(file => file.Outputs).Where(File.Exists).Sum(path => new FileInfo(path).Length);
             if (outputBytes > 0)
                 EstimatedSizeText.Text = $"결과 용량 · {FormatBytes(outputBytes)}";
         }
@@ -731,8 +713,18 @@ public partial class MainWindow : Window
         }
         finally
         {
-            ConvertButton.IsEnabled = true;
+            _busy = false;
+            ConversionSettings.IsEnabled = true;
+            ClearFilesButton.IsEnabled = true;
+            await RefreshTargetsAsync();
         }
+    }
+
+    private void UpdateQueueStatus()
+    {
+        FileHint.Text = ConversionQueue.Summary(_queue);
+        Progress.Maximum = Math.Max(1, _queue.Count);
+        Progress.Value = _queue.Count(file => file.State is QueueState.Completed or QueueState.Failed);
     }
 
     private ProcessStartInfo BackendStartInfo(string command)

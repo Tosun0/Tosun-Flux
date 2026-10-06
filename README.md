@@ -92,11 +92,15 @@ Real-ESRGAN macOS portable 패키지는 공식 릴리즈의 `realesrgan-ncnn-vul
 
 ## 웹 실행과 배포
 
+Windows와 macOS 앱도 같은 파일별 큐를 사용합니다. 여러 파일을 2x/4x AI 업스케일할 수 있고, 처리 중 파일 추가·대기 항목 삭제·실패 항목 재등록을 지원합니다. 앱의 두 UI는 `Source/TosunFluxShared/ConversionQueue.cs`의 실행 코드를 공유합니다. 앱 백엔드는 완료 이벤트만 제공하므로 처리 중에는 불확정 진행 막대, 완료 후에는 100%를 표시합니다. 웹에서는 프레임·타일 단위 진행률도 표시합니다.
+
 웹 UI는 기존 `TosunFluxConverter.py`의 변환 프로파일을 `/api/health`에서 받아 해상도·화면비·배율·출력 형식·프레임·크기 제한을 구성합니다. 앱 엔진의 공통 기준을 바꾸고 웹을 재배포하면 웹 설정도 함께 반영됩니다. WPF 화면 배치·설치기 같은 플랫폼 전용 코드는 공유하지 않습니다.
 
 Chrome·Edge의 이미지 2x/4x 확대 연산은 ONNX Runtime WebGPU와 Real-ESRGAN x4plus 모델로 사용자 GPU에서 처리합니다. 네이티브 4x PNG 결과를 서버에 전송한 뒤, 앱과 같은 Python 엔진이 2x Lanczos 축소·JPG 품질·WEBP 무손실·PNG 압축·파일명·ZIP 출력을 처리합니다. 따라서 WebGPU 사용 시에도 최종 저장에는 서버 연결과 이미지 전송이 필요하며, 서버의 업로드 제한이 적용됩니다. 브라우저에서 지원하지 않는 입력 디코더나 모델은 로컬 WebGPU로 처리할 수 없고, 서버 AI 엔진이 설치된 경우에만 서버 업스케일 옵션을 사용할 수 있습니다.
 
-영상 2x/4x WebGPU 업스케일은 앱의 영상 모델인 `realesr-animevideov3`의 [ONNX 변환본](https://huggingface.co/skillsafe-ai/realesr-animevideov3)을 사용합니다. 원본 영상을 서버에 업로드하면 FFmpeg가 지정 FPS로 프레임을 스트리밍하고, 브라우저는 한 프레임씩 GPU로 확대해 서버에 돌려보냅니다. 서버는 앱과 같은 인코딩·오디오 결합 코드를 사용해 MP4/WEBM/MOV/MKV/AVI/GIF 또는 PNG/JPG Sequence ZIP으로 저장합니다. 여러 영상은 순차 처리하며 파일별 다운로드 링크를 남깁니다. 모델 가중치가 같아도 ONNX·NCNN의 수치 정밀도 차이로 픽셀이 완전히 일치하는 것은 아닙니다.
+영상 2x/4x WebGPU 업스케일은 앱의 영상 모델인 `realesr-animevideov3`의 [ONNX 변환본](https://huggingface.co/skillsafe-ai/realesr-animevideov3)을 사용합니다. 원본 영상을 서버에 업로드하면 FFmpeg가 지정 FPS로 프레임을 스트리밍하고, 브라우저는 한 프레임씩 GPU로 확대해 서버에 돌려보냅니다. 서버는 앱과 같은 인코딩·오디오 결합 코드를 사용해 MP4/WEBM/MOV/MKV/AVI/GIF 또는 PNG/JPG Sequence ZIP으로 저장합니다. 모델 가중치가 같아도 ONNX·NCNN의 수치 정밀도 차이로 픽셀이 완전히 일치하는 것은 아닙니다.
+
+이미지·영상은 파일별 큐로 순차 처리합니다. 큐에 대기·처리 중·완료·실패와 파일별 진행률·프레임 상황을 표시하고, 처리 중에도 새 파일 추가와 대기 항목 삭제가 가능합니다. 한 파일이 실패해도 다음 항목을 계속 처리하며, 실패 항목은 `다시 대기`로 큐 끝에 재등록할 수 있습니다. 실행 중 설정은 시작 시 선택한 값으로 고정됩니다. 결과 다운로드는 각 완료 행에 남으며, 자동 다운로드가 막혀도 직접 누를 수 있습니다. 결과 보관 용량을 넘으면 완료 결과를 다운로드하고 큐에서 삭제한 뒤 나머지를 재등록하세요.
 
 무료 웹 서버 보호를 위해 영상 업스케일은 입력 2,097,152픽셀(FHD급), 출력 8,388,608픽셀(4K UHD급), 길이 10분 이하이며 서버 전체에서 한 번에 한 영상만 처리합니다. 업로드·배치 결과에는 기존 용량 제한을 적용합니다. 완료·실패·페이지 이탈 시 임시 영상과 프로세스를 정리하며, 연결이 끊긴 작업은 20분 유휴 후 삭제합니다. 일반 영상 변환에는 이 업스케일 전용 제한을 적용하지 않습니다. WebGPU 지원 브라우저와 GPU 드라이버가 필요합니다.
 
@@ -126,6 +130,8 @@ docker run --rm -p 8080:8080 tosun-flux-web
 
 ```powershell
 python -m unittest discover -s Tests -v
+node Tests/test_web_queue.cjs
+dotnet run --project Tests/ConversionQueueSmoke.csproj -- <python> <backend.py> <input-dir>
 ```
 
 ## 배포

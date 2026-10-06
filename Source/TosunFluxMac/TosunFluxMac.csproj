@@ -16,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\TosunFluxShared\ConversionQueue.cs" Link="ConversionQueue.cs" />
     <PackageReference Include="Avalonia" Version="11.3.21" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.21" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.21" />

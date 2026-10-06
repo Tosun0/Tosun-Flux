@@ -19,6 +19,7 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\TosunFluxShared\ConversionQueue.cs" Link="ConversionQueue.cs" />
     <Resource Include="..\..\Content\TosunFlux\tosun-floating-v1.png" Link="Assets\tosun-floating-v1.png" />
     <Resource Include="..\..\Content\TosunFlux\Tosun.ico" Link="Assets\Tosun.ico" />
     <Resource Include="..\..\Content\TosunFlux\Pretendard.ttf" Link="Assets\Pretendard.ttf" />

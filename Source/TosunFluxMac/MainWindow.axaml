@@ -34,7 +34,7 @@
           <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="12">
             <StackPanel Orientation="Horizontal" Spacing="10">
               <Button Classes="primary" Content="파일 추가" Click="AddFilesClick" />
-              <Button Classes="ghost" Content="전체 비우기" Click="ClearFilesClick" />
+              <Button x:Name="ClearFilesButton" Classes="ghost" Content="전체 비우기" Click="ClearFilesClick" />
             </StackPanel>
             <Border Grid.Row="1" Background="#10141D" BorderBrush="#202738" BorderThickness="1" CornerRadius="18" Padding="14">
               <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -44,9 +44,14 @@
                       <Grid ColumnDefinitions="*,Auto" Margin="0,4">
                         <StackPanel Spacing="2">
                           <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="#EDF0FB" TextTrimming="CharacterEllipsis" />
-                          <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="#737D97" />
+                          <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="#737D97" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail}" />
+                          <ProgressBar Maximum="100" Value="{Binding Progress}" IsIndeterminate="{Binding IsProcessing}" Height="3" Margin="0,4,12,4" />
                         </StackPanel>
-                        <Button Grid.Column="1" Content="×" Tag="{Binding}" Classes="ghost" Padding="8,3" FontSize="18" Click="RemoveFileClick" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Status}" FontSize="11" Foreground="#929BB4" VerticalAlignment="Center" Margin="0,0,6,0" />
+                          <Button Content="↻" Tag="{Binding}" Classes="ghost" Padding="8,3" IsEnabled="{Binding CanRetry}" ToolTip.Tip="실패한 파일 다시 대기" Click="RetryFileClick" />
+                          <Button Content="×" Tag="{Binding}" Classes="ghost" Padding="8,3" FontSize="18" IsEnabled="{Binding CanRemove}" ToolTip.Tip="큐에서 삭제" Click="RemoveFileClick" />
+                        </StackPanel>
                       </Grid>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
@@ -59,7 +64,7 @@
       </Border>
 
       <Border Grid.Column="1" Background="#151923" BorderBrush="#242A39" BorderThickness="1" CornerRadius="26" Padding="26">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="10">
+        <Grid x:Name="ConversionSettings" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="10">
           <TextBlock Text="변환 설정" FontSize="21" FontWeight="Bold" Foreground="#F4F6FF" Margin="0,0,0,8" />
           <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
             <StackPanel Spacing="6">

@@ -9,6 +9,7 @@
 /Source/TosunFluxMac/Build/
 /Source/TosunFluxInstaller/bin/
 /Source/TosunFluxInstaller/obj/
+/Tests/obj/
 
 # Python runtime cache
 __pycache__/

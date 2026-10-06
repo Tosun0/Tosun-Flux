@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0c12">
   <title>Tosun Flux Web</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app.css?v=20261006-queue">
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.webgpu.min.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=20261006-queue" defer></script>
 </head>
 <body>
   <div class="aurora aurora-a"></div><div class="aurora aurora-b"></div>
@@ -21,6 +21,8 @@
         <div class="section-heading"><div><span class="step">01</span><h2>변환할 파일</h2></div><button id="clearButton" class="text-button" type="button" disabled>전체 비우기</button></div>
         <label id="dropZone" class="drop-zone" for="fileInput" tabindex="0"><input id="fileInput" type="file" multiple hidden><span class="drop-icon">＋</span><strong>파일을 끌어다 놓으세요</strong><span>또는 클릭해서 여러 파일을 선택합니다</span></label>
         <div class="file-meta"><span id="fileSummary">파일이 없습니다</span><span id="fileLimit">설정 확인 중</span></div>
+        <p id="queueSummary" role="status">대기 0 · 처리 중 0 · 완료 0 · 실패 0</p>
+        <p class="queue-hint">여러 파일을 큐에 추가하세요. 처리 중에도 추가·대기 항목 삭제가 가능하며, 한 파일이 실패해도 다음 파일을 계속 처리합니다.</p>
         <ul id="fileList" class="file-list" aria-live="polite"></ul>
       </article>
       <article class="glass settings-panel">
@@ -34,7 +36,7 @@
         <div id="customSize" class="custom-size" hidden><label>가로<input id="width" type="number" min="2" max="16384" placeholder="1920"></label><span>×</span><label>세로<input id="height" type="number" min="2" max="16384" placeholder="1080"></label></div>
         <div class="segmented" aria-label="화면 맞춤"></div>
         <label id="fpsWrap" class="fps" hidden>프레임<select id="fps" disabled></select></label>
-        <div class="action-area"><div class="progress-track"><span id="progressBar"></span></div><p id="statusText" role="status">파일을 추가하면 변환을 시작할 수 있습니다.</p><p class="subtitle">이미지·영상의 WebGPU 확대는 사용자 GPU가, 최종 압축·저장은 앱 공통 서버 엔진이 처리합니다. 영상 업스케일: 입력 FHD급·출력 4K UHD급·최대 10분. 원본 영상과 확대 프레임을 서버로 전송합니다.</p><div id="downloads"></div><button id="convertButton" class="primary-button" type="button" disabled>변환 시작</button></div>
+        <div class="action-area"><div class="progress-track"><span id="progressBar"></span></div><p id="statusText" role="status">파일을 추가하면 변환을 시작할 수 있습니다.</p><p class="subtitle">이미지·영상의 WebGPU 확대는 사용자 GPU가, 최종 압축·저장은 앱 공통 서버 엔진이 처리합니다. 영상 업스케일: 입력 FHD급·출력 4K UHD급·최대 10분. 원본 영상과 확대 프레임을 서버로 전송합니다.</p><button id="convertButton" class="primary-button" type="button" disabled>변환 시작</button></div>
       </article>
     </section>
     <footer><span id="version">Tosun Flux Web</span><span>© 2026 Tosun Studio. All rights reserved.</span></footer>

@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using TosunFluxShared;
 
 namespace TosunFluxMac;
 
@@ -18,13 +19,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _target = "png";
     private bool _busy;
 
-    public ObservableCollection<SourceFile> Files { get; } = new();
+    public ObservableCollection<ConversionQueueItem> Files { get; } = new();
 
     public bool IsCustomResolution { get; private set; }
 
     public string FileSummary => Files.Count == 0
         ? "파일을 추가하면 변환할 수 있습니다."
-        : $"{Files.Count}개 파일이 준비되었습니다.";
+        : ConversionQueue.Summary(Files);
 
     public new event PropertyChangedEventHandler? PropertyChanged;
 
@@ -97,7 +98,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void RemoveFileClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: SourceFile file })
+        if (sender is Button { Tag: ConversionQueueItem file } && file.CanRemove)
         {
             Files.Remove(file);
             OnPropertyChanged(nameof(FileSummary));
@@ -107,7 +108,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void ClearFilesClick(object? sender, RoutedEventArgs e)
     {
+        if (_busy)
+            return;
         Files.Clear();
+        OnPropertyChanged(nameof(FileSummary));
+        await RefreshTargetsAsync();
+    }
+
+    private async void RetryFileClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: ConversionQueueItem file } || !file.CanRetry)
+            return;
+        file.SetState(QueueState.Waiting, "다시 대기 중");
+        Files.Remove(file);
+        Files.Add(file);
         OnPropertyChanged(nameof(FileSummary));
         await RefreshTargetsAsync();
     }
@@ -134,7 +148,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void ConvertClick(object? sender, RoutedEventArgs e)
     {
-        if (_busy || Files.Count == 0)
+        if (_busy || !Files.Any(file => file.State == QueueState.Waiting))
         {
             StatusText.Text = Files.Count == 0 ? "먼저 파일을 추가하세요." : "이미 변환 중입니다.";
             return;
@@ -154,6 +168,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _busy = true;
+        ConversionSettings.IsEnabled = false;
+        ClearFilesButton.IsEnabled = false;
         ProgressBar.IsVisible = true;
         ProgressBar.Value = 0;
         StatusText.Text = "변환을 준비하는 중입니다...";
@@ -177,48 +193,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 command.ArgumentList.Add("--height");
                 command.ArgumentList.Add(options.Height.Value.ToString());
             }
-            foreach (var file in Files)
-            {
-                command.ArgumentList.Add(file.Path);
-            }
-
-            using var process = new Process { StartInfo = command };
-            process.Start();
-            while (await process.StandardOutput.ReadLineAsync() is { } line)
-            {
-                if (!TryParseJson(line, out var payload))
-                {
-                    continue;
-                }
-
-                if (payload.RootElement.TryGetProperty("event", out var eventElement)
-                    && eventElement.GetString() == "progress")
-                {
-                    var index = payload.RootElement.GetProperty("index").GetInt32();
-                    var total = payload.RootElement.GetProperty("total").GetInt32();
-                    ProgressBar.Value = total == 0 ? 0 : (double)index / total;
-                    var error = payload.RootElement.TryGetProperty("error", out var errorElement)
-                        ? errorElement.GetString()
-                        : null;
-                    StatusText.Text = error is null
-                        ? $"{index}/{total}개 변환 완료"
-                        : $"{index}/{total}개 실패: {error}";
-                }
-            }
-
-            var errorOutput = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            if (process.ExitCode == 0)
-            {
-                ProgressBar.Value = 1;
-                StatusText.Text = "변환이 완료되었습니다.";
-            }
-            else
-            {
-                StatusText.Text = string.IsNullOrWhiteSpace(errorOutput)
-                    ? "변환에 실패했습니다."
-                    : $"변환 실패: {errorOutput.Trim()}";
-            }
+            await ConversionQueue.RunAsync(Files, command, UpdateQueueStatus);
+            StatusText.Text = ConversionQueue.Summary(Files);
         }
         catch (Exception error)
         {
@@ -227,7 +203,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             _busy = false;
+            ConversionSettings.IsEnabled = true;
+            ClearFilesButton.IsEnabled = true;
+            await RefreshTargetsAsync();
         }
+    }
+
+    private void UpdateQueueStatus()
+    {
+        OnPropertyChanged(nameof(FileSummary));
+        ProgressBar.Value = Files.Count == 0 ? 0 : (double)Files.Count(file => file.State is QueueState.Completed or QueueState.Failed) / Files.Count;
+        if (Files.FirstOrDefault(file => file.IsProcessing) is { } active)
+            StatusText.Text = $"처리 중 · {active.Name}";
     }
 
     private void AddPaths(IEnumerable<string> paths)
@@ -236,7 +223,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (Files.All(file => !string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase)))
             {
-                Files.Add(new SourceFile(path));
+                Files.Add(new ConversionQueueItem(Path.GetFullPath(path)));
             }
         }
         OnPropertyChanged(nameof(FileSummary));
@@ -244,7 +231,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task RefreshTargetsAsync()
     {
-        if (Files.Count == 0)
+        if (_busy)
+        {
+            UpdateQueueStatus();
+            return;
+        }
+        var paths = Files.Where(file => file.State == QueueState.Waiting).Select(file => file.Path).ToArray();
+        var selectedTarget = _target;
+        if (paths.Length == 0)
         {
             TargetCombo.ItemsSource = Array.Empty<TargetOption>();
             TargetCombo.SelectedIndex = -1;
@@ -256,25 +250,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var command = CreateBackendCommand(new[] { "targets" }.Concat(Files.Select(file => file.Path)).ToArray());
+            var command = CreateBackendCommand(new[] { "targets" }.Concat(paths).ToArray());
             using var process = new Process { StartInfo = command };
             process.Start();
+            var errorTask = process.StandardError.ReadToEndAsync();
             var line = await process.StandardOutput.ReadLineAsync();
             await process.WaitForExitAsync();
-            if (line is null || !TryParseJson(line, out var payload))
+            if (_busy || !paths.SequenceEqual(Files.Where(file => file.State == QueueState.Waiting).Select(file => file.Path)))
+                return;
+            if (process.ExitCode != 0 || line is null || !TryParseJson(line, out var payload))
             {
-                throw new InvalidOperationException("백엔드 응답을 읽지 못했습니다.");
+                throw new InvalidOperationException("백엔드 응답을 읽지 못했습니다. " + (await errorTask).Trim());
             }
-
-            var targets = payload.RootElement.GetProperty("targets")
+            using var response = payload;
+            var targets = response.RootElement.GetProperty("targets")
                 .EnumerateArray()
                 .Select(item => item.GetString())
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => new TargetOption(value!))
                 .ToArray();
             TargetCombo.ItemsSource = targets;
-            TargetCombo.SelectedIndex = targets.Length == 0 ? -1 : 0;
-            _target = targets.Length == 0 ? "" : targets[0].Value;
+            TargetCombo.SelectedItem = targets.FirstOrDefault(option => option.Value == selectedTarget) ?? targets.FirstOrDefault();
+            _target = (TargetCombo.SelectedItem as TargetOption)?.Value ?? "";
             UpdateControls();
         }
         catch (Exception error)
@@ -485,21 +482,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         int? Height,
         string Fps,
         double ScaleFactor);
-}
-
-public sealed class SourceFile
-{
-    public SourceFile(string path)
-    {
-        Path = path;
-        Name = System.IO.Path.GetFileName(path);
-        var info = new FileInfo(path);
-        Detail = $"{info.Length / 1024d / 1024d:0.##} MB  ·  {info.Extension.TrimStart('.').ToUpperInvariant()}";
-    }
-
-    public string Path { get; }
-    public string Name { get; }
-    public string Detail { get; }
 }
 
 public sealed class TargetOption

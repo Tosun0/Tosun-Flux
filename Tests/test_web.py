@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
@@ -33,7 +34,13 @@ class WebTests(unittest.TestCase):
     def test_web_and_desktop_expose_the_same_live_profile(self) -> None:
         backend = ROOT / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
         result = subprocess.run([sys.executable, str(backend), "health"], capture_output=True, text=True, check=True)
-        self.assertEqual(self.client.get("/api/health").json()["profile"], json.loads(result.stdout)["profile"])
+        backend_health = json.loads(result.stdout)
+        web_health = self.client.get("/api/health").json()
+        self.assertEqual(web_health["profile"], backend_health["profile"])
+        self.assertEqual(web_health["version"], backend_health["version"])
+        for project in ("TosunFlux", "TosunFluxMac", "TosunFluxInstaller"):
+            version = ET.parse(ROOT / "Source" / project / f"{project}.csproj").findtext("PropertyGroup/Version")
+            self.assertEqual(version, web_health["version"])
         with patch.dict(RESOLUTIONS, {"test-preset": (800, 600)}):
             self.assertEqual(self.client.get("/api/health").json()["profile"]["resolutions"]["test-preset"], [800, 600])
 

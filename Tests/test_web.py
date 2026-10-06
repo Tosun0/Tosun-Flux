@@ -23,6 +23,14 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("webp", response.json()["targets"])
 
+    def test_webgpu_client_assets_are_allowed(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ort.webgpu.min.js", response.text)
+        self.assertIn("https://cdn.jsdelivr.net", response.headers["content-security-policy"])
+        self.assertIn("'wasm-unsafe-eval'", response.headers["content-security-policy"])
+        self.assertIn("https://huggingface.co", response.headers["content-security-policy"])
+
     def test_image_conversion_downloads_real_jpeg(self) -> None:
         source = io.BytesIO()
         Image.new("RGB", (12, 8), "#8795ff").save(source, format="PNG")

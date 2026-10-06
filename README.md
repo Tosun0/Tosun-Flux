@@ -14,7 +14,7 @@
 - 파일 드래그 앤 드롭 및 파일별 삭제
 - 이미지·영상·PDF 최적화
 - 해상도(4K UHD·4K·QHD·FHD·HD·SD)·화면비·맞춤 방식·직접 픽셀 지정
-- 이미지·영상 2x/4x AI 업스케일(Real-ESRGAN-ncnn-vulkan 기반)
+- 이미지·영상 2x/4x AI 업스케일(네이티브 Real-ESRGAN, 웹 이미지 ONNX WebGPU Real-ESRGAN)
 - 영상 프레임 변환과 PNG/JPG 프레임 시퀀스 추출
 - 파일별 해상도·프레임을 반영한 예상 용량 범위와 변환 후 실제 용량 표시
 - GitHub Releases 기반 업데이트 확인과 설치
@@ -92,7 +92,7 @@ Real-ESRGAN macOS portable 패키지는 공식 릴리즈의 `realesrgan-ncnn-vul
 
 ## 웹 실행과 배포
 
-웹 UI는 기존 `TosunFluxConverter.py`를 그대로 호출합니다. 개발 환경에서는 다음 명령으로 실행합니다.
+웹 UI는 일반 변환에 기존 `TosunFluxConverter.py`를 그대로 호출합니다. Chrome·Edge의 이미지 2x/4x 업스케일은 ONNX Runtime WebGPU와 Real-ESRGAN x4plus 모델로 사용자 GPU에서 처리하며, 미지원 환경에서는 서버 AI 엔진을 사용합니다. 개발 환경에서는 다음 명령으로 실행합니다.
 
 ```powershell
 python -m pip install -r .\Source\TosunFluxWeb\requirements-dev.txt
@@ -110,7 +110,9 @@ docker run --rm -p 8080:8080 tosun-flux-web
 
 [Render에서 배포](https://render.com/deploy?repo=https://github.com/Tosun0/Tosun-Flux)를 누르면 저장소의 `render.yaml`로 웹 서비스를 생성할 수 있습니다.
 
-기본 컨테이너는 FFmpeg와 Poppler를 포함합니다. AI 업스케일은 Vulkan GPU가 있는 서버에 Real-ESRGAN 실행 파일과 `models` 폴더를 함께 배치하고 `TOSUN_REALESRGAN_BIN`으로 실행 파일을 지정해야 활성화됩니다. 업로드 제한은 `TOSUN_WEB_MAX_FILE_MB`와 `TOSUN_WEB_MAX_REQUEST_MB`로 조정합니다.
+기본 컨테이너는 FFmpeg와 Poppler를 포함합니다. 웹 이미지 업스케일은 브라우저 WebGPU에서 동작하고, 영상·GIF 업스케일은 Vulkan GPU가 있는 서버에 Real-ESRGAN 실행 파일과 `models` 폴더를 함께 배치하고 `TOSUN_REALESRGAN_BIN`으로 실행 파일을 지정해야 활성화됩니다. 업로드 제한은 `TOSUN_WEB_MAX_FILE_MB`와 `TOSUN_WEB_MAX_REQUEST_MB`로 조정합니다.
+
+웹 모델은 공식 Real-ESRGAN x4plus 가중치를 재현 가능하게 변환한 [SkillSafe ONNX 모델](https://huggingface.co/skillsafe-ai/realesrgan-x4plus)을 사용하며 원본과 동일한 BSD 3-Clause 라이선스를 따릅니다.
 
 ## 테스트
 

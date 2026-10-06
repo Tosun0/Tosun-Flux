@@ -45,8 +45,11 @@ async def secure_headers(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-        "script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'"
+        "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; "
+        "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "
+        "connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co "
+        "https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; "
+        "object-src 'none'; base-uri 'none'"
     )
     return response
 

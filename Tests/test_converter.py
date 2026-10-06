@@ -12,7 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend"))
 from PIL import Image, ImageSequence
 
-from TosunFluxConverter import ConversionError, ConversionOptions, _convert_ai_video, _is_identity_conversion, _run_ai_upscale, _video_filter, bundled_tool, common_targets, convert_file, supported_targets, target_dimensions
+from TosunFluxConverter import ConversionError, ConversionOptions, _convert_ai_video, _is_identity_conversion, _run_ai_upscale, _video_filter, bundled_tool, common_targets, convert_file, convert_files, supported_targets, target_dimensions
 
 
 class ConverterTests(unittest.TestCase):
@@ -96,6 +96,10 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("-vf", extract_call)
             self.assertIn("fps=60", extract_call)
             self.assertEqual(encode_call[encode_call.index("-framerate") + 1], "60")
+            self.assertEqual(encode_call[encode_call.index("-c:v") + 1], "libx264")
+            self.assertEqual(encode_call[encode_call.index("-pix_fmt") + 1], "yuv420p")
+            self.assertEqual(encode_call[encode_call.index("-c:a") + 1], "aac")
+            self.assertIn("+faststart", encode_call)
 
     def test_ai_2x_uses_native_4x_output_then_downsamples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -235,6 +239,17 @@ class ConverterTests(unittest.TestCase):
         backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
         completed = subprocess.run(
             [sys.executable, str(backend), "convert", "--output", "out", "--target", "mp4", "--scale-factor", "2", "--upscale-engine", "ai", "missing.mp4"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertNotEqual(completed.returncode, 2, completed.stderr)
+
+    def test_backend_cli_accepts_overwrite(self) -> None:
+        backend = Path(__file__).resolve().parents[1] / "Source" / "TosunFluxBackend" / "TosunFluxBackend.py"
+        completed = subprocess.run(
+            [sys.executable, str(backend), "convert", "--output", "out", "--target", "png", "--overwrite", "missing.png"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -382,6 +397,33 @@ class ConverterTests(unittest.TestCase):
             second = convert_file(source, output, "md").outputs[0]
             self.assertEqual(first.name, "note.md")
             self.assertEqual(second.name, "note (1).md")
+
+    def test_overwrite_replaces_multiple_originals_after_conversion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = [root / "one.png", root / "two.png"]
+            for source, color in zip(sources, ("red", "blue")):
+                Image.new("RGB", (8, 6), color).save(source)
+
+            results = convert_files(
+                sources,
+                root / "unused-output",
+                "png",
+                options=ConversionOptions(width=4, height=4),
+                overwrite=True,
+            )
+
+            self.assertEqual([result.outputs[0] for result in results], sources)
+            for source in sources:
+                with Image.open(source) as converted:
+                    self.assertEqual(converted.size, (4, 4))
+
+    def test_overwrite_rejects_extension_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "photo.png"
+            Image.new("RGB", (8, 6), "white").save(source)
+            with self.assertRaisesRegex(ConversionError, "확장자"):
+                convert_file(source, Path(temporary) / "out", "jpg", overwrite=True)
 
 
 if __name__ == "__main__":

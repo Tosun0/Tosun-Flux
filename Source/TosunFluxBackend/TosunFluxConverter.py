@@ -205,7 +205,7 @@ def unique_sequence_pattern(directory: Path, stem: str, extension: str) -> tuple
 
 
 def _is_identity_conversion(source: Path, target: str, options: ConversionOptions) -> bool:
-    source_format = {"jpeg": "jpg", "tif": "tiff", "markdown": "md"}.get(source.suffix.lower().lstrip("."), source.suffix.lower().lstrip("."))
+    source_format = _normalized_extension(source)
     return (
         source_format == target.lower()
         and options.optimize == "source"
@@ -217,6 +217,11 @@ def _is_identity_conversion(source: Path, target: str, options: ConversionOption
         and options.scale_factor == 1.0
         and options.upscale_engine == "resize"
     )
+
+
+def _normalized_extension(path: Path) -> str:
+    extension = path.suffix.lower().lstrip(".")
+    return {"jpeg": "jpg", "tif": "tiff", "markdown": "md"}.get(extension, extension)
 
 
 def _read_text(path: Path) -> str:
@@ -651,13 +656,18 @@ def _video_filter(options: ConversionOptions, source_size: tuple[int, int] = (19
 
 
 def _video_encoding_args(target: str, options: ConversionOptions) -> list[str]:
-    if options.optimize == "source" or target == "gif":
+    if target == "gif":
         return []
-    crf = {"quality": "18", "balanced": "23", "small": "28"}[options.optimize]
+    crf = {"source": "20", "quality": "18", "balanced": "23", "small": "28"}[options.optimize]
     if target == "webm":
-        return ["-c:v", "libvpx-vp9", "-crf", crf, "-b:v", "0", "-c:a", "libopus"]
-    audio_rate = {"quality": "192k", "balanced": "160k", "small": "128k"}[options.optimize]
-    return ["-c:v", "libx264", "-preset", "medium", "-crf", crf, "-c:a", "aac", "-b:a", audio_rate]
+        return ["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", crf, "-b:v", "0", "-c:a", "libopus"]
+    audio_rate = {"source": "192k", "quality": "192k", "balanced": "160k", "small": "128k"}[options.optimize]
+    if target == "avi":
+        return ["-c:v", "mpeg4", "-pix_fmt", "yuv420p", "-q:v", {"source": "3", "quality": "2", "balanced": "4", "small": "6"}[options.optimize], "-c:a", "libmp3lame", "-b:a", audio_rate]
+    args = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", crf, "-c:a", "aac", "-b:a", audio_rate]
+    if target in {"mp4", "mov"}:
+        args.extend(["-movflags", "+faststart"])
+    return args
 
 
 def _convert_ai_video(source: Path, output_dir: Path, target: str, options: ConversionOptions) -> ConversionResult:
@@ -810,7 +820,7 @@ def _convert_text(source: Path, output_dir: Path, target: str) -> ConversionResu
     raise ConversionError(f"지원하지 않는 텍스트 변환입니다: {source.suffix} → .{target}")
 
 
-def convert_file(source: Path, output_dir: Path, target: str, options: ConversionOptions | None = None) -> ConversionResult:
+def convert_file(source: Path, output_dir: Path, target: str, options: ConversionOptions | None = None, overwrite: bool = False) -> ConversionResult:
     source = Path(source)
     output_dir = Path(output_dir)
     options = options or ConversionOptions()
@@ -818,6 +828,18 @@ def convert_file(source: Path, output_dir: Path, target: str, options: Conversio
         raise ConversionError(f"입력 파일을 찾을 수 없습니다: {source}")
     if target not in supported_targets(source):
         raise ConversionError(f"지원하지 않는 변환입니다: {source.suffix} → .{target}")
+    if overwrite:
+        if _normalized_extension(source) != target.lower():
+            raise ConversionError("원본 덮어쓰기는 입력과 출력 확장자가 같을 때만 사용할 수 있습니다.")
+        try:
+            with tempfile.TemporaryDirectory(prefix=".tosunflux-", dir=source.parent) as temporary:
+                result = convert_file(source, Path(temporary), target, options)
+                if len(result.outputs) != 1:
+                    raise ConversionError("원본 덮어쓰기는 단일 파일 출력만 지원합니다.")
+                os.replace(result.outputs[0], source)
+        except OSError as error:
+            raise ConversionError(f"원본 파일을 교체하지 못했습니다: {source.name}") from error
+        return ConversionResult(source, (source,))
     output_dir.mkdir(parents=True, exist_ok=True)
     if _is_identity_conversion(source, target, options):
         destination = unique_output(output_dir, source.stem, target)
@@ -835,12 +857,12 @@ def convert_file(source: Path, output_dir: Path, target: str, options: Conversio
     raise ConversionError(f"지원하지 않는 파일 형식입니다: {source.suffix or '(확장자 없음)'}")
 
 
-def convert_files(paths: Iterable[Path], output_dir: Path, target: str, on_progress: Callable[[int, int, ConversionResult | None, Exception | None], None] | None = None, options: ConversionOptions | None = None) -> list[ConversionResult]:
+def convert_files(paths: Iterable[Path], output_dir: Path, target: str, on_progress: Callable[[int, int, ConversionResult | None, Exception | None], None] | None = None, options: ConversionOptions | None = None, overwrite: bool = False) -> list[ConversionResult]:
     items = list(paths)
     results: list[ConversionResult] = []
     for index, source in enumerate(items, start=1):
         try:
-            result = convert_file(source, output_dir, target, options)
+            result = convert_file(source, output_dir, target, options, overwrite)
             results.append(result)
             if on_progress:
                 on_progress(index, len(items), result, None)

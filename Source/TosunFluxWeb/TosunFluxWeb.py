@@ -28,7 +28,7 @@ from TosunFluxConverter import (  # noqa: E402
     convert_file,
 )
 
-VERSION = "1.2.5"
+VERSION = "1.2.6"
 MAX_FILES = 20
 MAX_FILE_BYTES = int(os.environ.get("TOSUN_WEB_MAX_FILE_MB", "512")) * 1024 * 1024
 MAX_REQUEST_BYTES = int(os.environ.get("TOSUN_WEB_MAX_REQUEST_MB", "1024")) * 1024 * 1024

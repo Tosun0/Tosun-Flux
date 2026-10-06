@@ -100,12 +100,17 @@ public partial class MainWindow : Window
         _trayIcon.Dispose();
     }
 
-    private void ShowFromTray()
+    internal void BringToFront()
     {
         Show();
         WindowState = WindowState.Normal;
         Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
+
+    private void ShowFromTray() => BringToFront();
 
     private void ExitApplication()
     {
@@ -229,6 +234,8 @@ public partial class MainWindow : Window
 
     private void TargetBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateVisualSettings();
 
+    private void OverwriteCheckBox_Changed(object sender, RoutedEventArgs e) => UpdateVisualSettings();
+
     private void OptimizationBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateEstimatedSize();
 
     private void FrameRateBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateEstimatedSize();
@@ -262,6 +269,16 @@ public partial class MainWindow : Window
         var pdfCompressionOnly = TargetBox.SelectedItem is TargetChoice { Key: "pdf" };
         var customResolution = ResolutionBox.SelectedIndex == CustomResolutionIndex;
         var scaleResolution = ResolutionBox.SelectedIndex is Scale2ResolutionIndex or Scale4ResolutionIndex;
+        var canOverwrite = TargetBox.SelectedItem is TargetChoice selectedTarget &&
+                           _files.Count > 0 &&
+                           _files.All(path => NormalizeFormat(Path.GetExtension(path)) == selectedTarget.Key);
+        OverwriteCheckBox.IsEnabled = canOverwrite;
+        if (!canOverwrite)
+            OverwriteCheckBox.IsChecked = false;
+        var overwrite = OverwriteCheckBox.IsChecked == true;
+        OutputPath.IsEnabled = !overwrite;
+        ChooseFolderButton.IsEnabled = !overwrite;
+        OpenOutputFolderButton.IsEnabled = !overwrite;
         OptimizationBox.IsEnabled = supportsVisualOptions;
         ResolutionBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         AspectBox.IsEnabled = supportsVisualOptions && !pdfCompressionOnly && !customResolution && !scaleResolution;
@@ -272,7 +289,9 @@ public partial class MainWindow : Window
         FitChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         FillChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
         StretchChoice.IsEnabled = supportsVisualOptions && !pdfCompressionOnly;
-        OptimizationHint.Text = !supportsVisualOptions
+        OptimizationHint.Text = overwrite
+            ? "변환이 성공한 파일만 원본을 교체합니다."
+            : !supportsVisualOptions
             ? "최적화는 이미지 · 영상 · PDF에 적용됩니다."
             : pdfCompressionOnly
                 ? "PDF 텍스트는 유지하고 내부 이미지와 구조를 최적화합니다."
@@ -523,6 +542,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OpenOutputFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var outputPath = Path.GetFullPath(OutputPath.Text.Trim());
+            Directory.CreateDirectory(outputPath);
+            Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
+        }
+        catch (Exception error)
+        {
+            StatusText.Text = "저장 폴더를 열지 못했습니다.";
+            AppendLog(error.Message);
+        }
+    }
+
     private async Task RefreshTargetsAsync()
     {
         TargetBox.Items.Clear();
@@ -581,7 +615,10 @@ public partial class MainWindow : Window
 
         if (TargetBox.Items.Count > 0)
         {
-            TargetBox.SelectedIndex = 0;
+            var preferredTarget = NormalizeFormat(Path.GetExtension(_files[0]));
+            TargetBox.SelectedItem = TargetBox.Items.OfType<TargetChoice>().FirstOrDefault(choice => choice.Key == preferredTarget);
+            if (TargetBox.SelectedIndex < 0)
+                TargetBox.SelectedIndex = 0;
             FileHint.Text = $"{_files.Count}개 파일 · 공통 변환 형식 {TargetBox.Items.Count}개";
             StatusText.Text = $"{_files.Count}개 파일을 추가했습니다.";
             ConvertButton.IsEnabled = true;
@@ -622,6 +659,8 @@ public partial class MainWindow : Window
         startInfo.ArgumentList.Add(scaleFactor.ToString(CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add("--upscale-engine");
         startInfo.ArgumentList.Add(scaleFactor == 1d ? "resize" : "ai");
+        if (OverwriteCheckBox.IsChecked == true)
+            startInfo.ArgumentList.Add("--overwrite");
         startInfo.ArgumentList.Add("--aspect");
         startInfo.ArgumentList.Add(ResolutionBox.SelectedIndex is Scale2ResolutionIndex or Scale4ResolutionIndex or CustomResolutionIndex ? "source" : new[] { "source", "16:9", "9:16", "1:1", "4:3", "3:4" }[Math.Clamp(AspectBox.SelectedIndex, 0, 5)]);
         startInfo.ArgumentList.Add("--fps");

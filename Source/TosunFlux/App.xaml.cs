@@ -8,7 +8,10 @@ namespace TosunFlux;
 public partial class App : System.Windows.Application
 {
     private const string SingleInstanceMutexName = "Tosun.TosunFlux.SingleInstance";
+    private const string ActivationEventName = "Tosun.TosunFlux.Activate";
     private static Mutex? _singleInstanceMutex;
+    private static EventWaitHandle? _activationEvent;
+    private static volatile bool _isExiting;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -17,11 +20,14 @@ public partial class App : System.Windows.Application
         {
             _singleInstanceMutex.Dispose();
             _singleInstanceMutex = null;
-            System.Windows.MessageBox.Show("Tosun Flux가 이미 실행 중입니다.", "Tosun Flux", MessageBoxButton.OK, MessageBoxImage.Information);
+            using var activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName);
+            activationEvent.Set();
             Shutdown();
             return;
         }
 
+        _activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName);
+        _ = Task.Run(WaitForActivation);
         SetCurrentProcessExplicitAppUserModelID("Tosun.TosunFlux");
         ApplyColorProfile(IsSystemDarkMode());
         base.OnStartup(e);
@@ -29,9 +35,31 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _isExiting = true;
+        _activationEvent?.Set();
+        _activationEvent?.Dispose();
+        _activationEvent = null;
         _singleInstanceMutex?.Dispose();
         _singleInstanceMutex = null;
         base.OnExit(e);
+    }
+
+    private static void WaitForActivation()
+    {
+        while (!_isExiting)
+        {
+            try
+            {
+                _activationEvent?.WaitOne();
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (!_isExiting)
+                Current.Dispatcher.BeginInvoke(() => (Current.MainWindow as TosunFlux.MainWindow)?.BringToFront());
+        }
     }
 
     private void ApplyColorProfile(bool dark)

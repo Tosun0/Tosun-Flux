@@ -16,8 +16,9 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "Source" / "TosunFluxWeb"))
 
-from TosunFluxWeb import app  # noqa: E402
-from TosunFluxConverter import ConversionOptions, RESOLUTIONS, conversion_profile, convert_file  # noqa: E402
+from TosunFluxWeb import app, video_jobs, _expire_videos  # noqa: E402
+from TosunFluxWebVideo import VIDEO_IDLE_SECONDS  # noqa: E402
+from TosunFluxConverter import ConversionOptions, RESOLUTIONS, conversion_profile, convert_file, bundled_tool, source_metadata  # noqa: E402
 
 
 class WebTests(unittest.TestCase):
@@ -118,6 +119,94 @@ class WebTests(unittest.TestCase):
             data={"target": "jpg"},
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_webgpu_video_stream_keeps_fps_audio_and_sequences(self) -> None:
+        tool = bundled_tool("ffmpeg")
+        self.assertIsNotNone(tool, "FFmpeg is required for video verification")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "토순.mp4"
+            subprocess.run([str(tool), "-y", "-f", "lavfi", "-i", "testsrc=size=32x24:rate=6:duration=1",
+                            "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(source)], capture_output=True, check=True)
+            for target, scale in (("mp4", 2), ("webm", 4), ("gif", 2), ("png-sequence", 4), ("jpg-sequence", 2)):
+                with self.subTest(target=target, scale=scale):
+                    start = self.client.post("/api/webgpu/video", files={"file": (source.name, source.read_bytes(), "video/mp4")}, data={"target": target, "scale": scale, "fps": "24"})
+                    self.assertEqual(start.status_code, 200, start.text)
+                    token = start.json()["id"]
+                    job = video_jobs[token]
+                    base = "/api/webgpu/video/" + token
+                    count = 0
+                    while True:
+                        response = self.client.get(base + f"/frames/{count}")
+                        self.assertIn(response.status_code, (200, 204), response.text if response.status_code != 200 else "")
+                        if response.status_code == 204:
+                            break
+                        self.assertEqual(self.client.get(base + f"/frames/{count}").content, response.content)
+                        with Image.open(io.BytesIO(response.content)) as frame:
+                            native = frame.resize((frame.width * 4, frame.height * 4))
+                            encoded = io.BytesIO()
+                            native.save(encoded, format="PNG")
+                        put = self.client.put(base + f"/frames/{count}", files={"file": ("frame.png", encoded.getvalue(), "image/png")})
+                        self.assertEqual(put.status_code, 200, put.text)
+                        count += 1
+                    self.assertEqual(count, 24)
+                    response = self.client.post(base + "/finish")
+                    self.assertEqual(response.status_code, 200, response.text if response.status_code != 200 else "")
+                    self.assertNotIn(token, video_jobs)
+                    self.assertFalse(job.root.exists())
+                    self.assertIsNotNone(job.decoder.poll())
+                    if target.endswith("-sequence"):
+                        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                            self.assertEqual(len(archive.namelist()), count)
+                            with Image.open(io.BytesIO(archive.read(archive.namelist()[0]))) as image:
+                                self.assertEqual(image.size, (32 * scale, 24 * scale))
+                    elif target == "gif":
+                        with Image.open(io.BytesIO(response.content)) as image:
+                            self.assertGreater(image.n_frames, 1)
+                            self.assertEqual(image.size, (32 * scale, 24 * scale))
+                    else:
+                        output = root / ("output." + target)
+                        output.write_bytes(response.content)
+                        metadata = source_metadata(output)
+                        self.assertEqual((metadata["width"], metadata["height"]), (32 * scale, 24 * scale))
+                        self.assertEqual(metadata["fps"], "24")
+                        probe = subprocess.run([str(tool), "-i", str(output)], capture_output=True, text=True)
+                        self.assertIn("Audio:", probe.stderr)
+                        self.assertLess(abs(float(metadata["duration"]) - 1), .15)
+
+    def test_webgpu_video_rejects_invalid_results_and_cleans_cancelled_expired_jobs(self) -> None:
+        tool = bundled_tool("ffmpeg")
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "clip.mp4"
+            subprocess.run([str(tool), "-y", "-f", "lavfi", "-i", "testsrc=size=32x24:rate=6:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(source)], capture_output=True, check=True)
+            for action in ("invalid", "order", "cancel", "expired", "limit"):
+                start = self.client.post("/api/webgpu/video", files={"file": (source.name, source.read_bytes())}, data={"target": "mp4", "scale": 2})
+                self.assertEqual(start.status_code, 200, start.text)
+                token = start.json()["id"]
+                job = video_jobs[token]
+                base = "/api/webgpu/video/" + token
+                busy = self.client.post("/api/webgpu/video", files={"file": (source.name, source.read_bytes())}, data={"target": "mp4", "scale": 2})
+                self.assertEqual(busy.status_code, 503)
+                if action == "invalid":
+                    self.client.get(base + "/frames/0")
+                    result = self.client.put(base + "/frames/0", files={"file": ("wrong.png", b"invalid")})
+                    self.assertEqual(result.status_code, 400)
+                elif action == "order":
+                    self.assertEqual(self.client.get(base + "/frames/1").status_code, 400)
+                elif action == "limit":
+                    with patch("TosunFluxWebVideo.MAX_VIDEO_INPUT_PIXELS", 1):
+                        self.assertEqual(self.client.get(base + "/frames/0").status_code, 400)
+                elif action == "expired":
+                    job.touched -= VIDEO_IDLE_SECONDS + 1
+                    _expire_videos()
+                else:
+                    self.assertEqual(self.client.delete(base).status_code, 200)
+                self.assertNotIn(token, video_jobs)
+                self.assertFalse(job.root.exists())
+                self.assertIsNotNone(job.decoder.poll())
+            bad = self.client.post("/api/webgpu/video", files={"file": ("bad.mp4", b"not video")}, data={"target": "mp4", "scale": 2})
+            self.assertEqual(bad.status_code, 400)
+            self.assertFalse(video_jobs)
 
 
 if __name__ == "__main__":

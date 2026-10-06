@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
+import time
+import uuid
+from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 from PIL import Image
@@ -20,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = PROJECT_ROOT / "Source" / "TosunFluxBackend"
 WEB_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND_ROOT))
+sys.path.insert(0, str(WEB_ROOT))
 
 from TosunFluxConverter import (  # noqa: E402
     AI_NATIVE_SCALE,
@@ -36,16 +42,48 @@ from TosunFluxConverter import (  # noqa: E402
     common_targets,
     conversion_profile,
     convert_file,
+    file_kind,
     supported_targets,
 )
+from TosunFluxWebVideo import VideoUpscale, MAX_FRAME_BYTES, MAX_VIDEO_INPUT_PIXELS, MAX_VIDEO_OUTPUT_PIXELS, MAX_VIDEO_SECONDS, VIDEO_IDLE_SECONDS
 
 VERSION = "1.2.6"
 MAX_FILES = 20
 MAX_FILE_BYTES = int(os.environ.get("TOSUN_WEB_MAX_FILE_MB", "512")) * 1024 * 1024
 MAX_REQUEST_BYTES = int(os.environ.get("TOSUN_WEB_MAX_REQUEST_MB", "1024")) * 1024 * 1024
 CHUNK_SIZE = 1024 * 1024
+video_jobs: dict[str, VideoUpscale | None] = {}
 
-app = FastAPI(title="Tosun Flux Web", version=VERSION, docs_url=None, redoc_url=None)
+
+def _expire_videos() -> None:
+    for token, job in list(video_jobs.items()):
+        if job is not None and time.monotonic() - job.touched > VIDEO_IDLE_SECONDS and job.lock.acquire(blocking=False):
+            try:
+                if video_jobs.pop(token, None) is job:
+                    job.close()
+            finally:
+                job.lock.release()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    async def cleanup():
+        while True:
+            await asyncio.sleep(30)
+            await run_in_threadpool(_expire_videos)
+    task = asyncio.create_task(cleanup())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        for job in list(video_jobs.values()):
+            if job is not None:
+                job.close()
+        video_jobs.clear()
+
+app = FastAPI(title="Tosun Flux Web", version=VERSION, docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=WEB_ROOT / "static"), name="static")
 app.mount("/assets", StaticFiles(directory=PROJECT_ROOT / "Content" / "TosunFlux"), name="assets")
 
@@ -79,6 +117,7 @@ def health() -> dict[str, object]:
         "ai_upscale": ai_upscaler_tool() is not None,
         "max_files": MAX_FILES,
         "max_file_mb": MAX_FILE_BYTES // (1024 * 1024),
+        "webgpu_video": {"max_input_pixels": MAX_VIDEO_INPUT_PIXELS, "max_output_pixels": MAX_VIDEO_OUTPUT_PIXELS, "max_seconds": MAX_VIDEO_SECONDS, "max_batch_bytes": MAX_REQUEST_BYTES},
         "profile": conversion_profile(),
     }
 
@@ -126,17 +165,7 @@ async def convert(
         for index, upload in enumerate(files, start=1):
             name = _safe_name(upload.filename or f"file-{index}")
             destination = _unique_path(inputs, name)
-            size = 0
-            with destination.open("wb") as handle:
-                while chunk := await upload.read(CHUNK_SIZE):
-                    size += len(chunk)
-                    total_bytes += len(chunk)
-                    if size > MAX_FILE_BYTES:
-                        raise HTTPException(413, f"{name}: 파일당 {MAX_FILE_BYTES // (1024 * 1024)}MB 제한을 넘었습니다.")
-                    if total_bytes > MAX_REQUEST_BYTES:
-                        raise HTTPException(413, f"전체 업로드 {MAX_REQUEST_BYTES // (1024 * 1024)}MB 제한을 넘었습니다.")
-                    handle.write(chunk)
-            await upload.close()
+            total_bytes = await _save_upload(upload, destination, total_bytes)
             saved.append(destination)
 
         if target not in common_targets(saved):
@@ -171,6 +200,98 @@ async def convert(
     except Exception:
         shutil.rmtree(root, ignore_errors=True)
         raise
+
+
+async def _save_upload(upload: UploadFile, destination: Path, total_bytes: int = 0) -> int:
+    size = 0
+    try:
+        with destination.open("wb") as handle:
+            while chunk := await upload.read(CHUNK_SIZE):
+                size += len(chunk)
+                total_bytes += len(chunk)
+                if size > MAX_FILE_BYTES or total_bytes > MAX_REQUEST_BYTES:
+                    raise HTTPException(413, f"업로드 제한: 파일당 {MAX_FILE_BYTES // CHUNK_SIZE}MB, 전체 {MAX_REQUEST_BYTES // CHUNK_SIZE}MB입니다.")
+                handle.write(chunk)
+        return total_bytes
+    finally:
+        await upload.close()
+
+
+@app.post("/api/webgpu/video")
+async def start_video(file: UploadFile = File(...), target: str = Form(...), scale: int = Form(...), optimize: str = Form("source"), fps: str = Form("source")):
+    name = _safe_name(file.filename or "video.mp4")
+    if file_kind(Path(name)) != "video" or target not in supported_targets(Path(name)) or scale not in (2, 4):
+        raise HTTPException(400, "지원하는 영상 형식과 2x 또는 4x 배율을 선택하세요.")
+    options = _options(optimize, "source", "source", "stretch", fps, 1, None, None)
+    # ponytail: one streaming video fits the free host; increase only with measured RAM headroom.
+    if video_jobs:
+        raise HTTPException(503, "다른 영상 업스케일을 처리 중입니다. 잠시 후 다시 시도해 주세요.")
+    token = uuid.uuid4().hex
+    root = Path(tempfile.mkdtemp(prefix="tosunflux-web-video-"))
+    video_jobs[token] = None  # reserve the slot before asynchronous upload
+    source = root / name
+    try:
+        await _save_upload(file, source)
+        job = await run_in_threadpool(VideoUpscale, root, source, target, options, scale, MAX_REQUEST_BYTES)
+        video_jobs[token] = job
+        return {"id": token, "frames": job.estimated_frames, "fps": job.fps}
+    except Exception as error:
+        video_jobs.pop(token, None)
+        shutil.rmtree(root, ignore_errors=True)
+        if isinstance(error, ConversionError):
+            raise HTTPException(400, str(error)) from error
+        raise
+
+
+def _video_step(token: str, method: str, *args):
+    job = video_jobs.get(token)
+    if job is None:
+        raise HTTPException(404, "영상 작업이 만료되었습니다. 다시 변환해 주세요.")
+    with job.lock:
+        job.touched = time.monotonic()
+        try:
+            return getattr(job, method)(*args)
+        except (ConversionError, subprocess.TimeoutExpired) as error:
+            video_jobs.pop(token, None)
+            job.close()
+            raise HTTPException(400, str(error)) from error
+
+
+@app.get("/api/webgpu/video/{token}/frames/{index}")
+async def video_frame(token: str, index: int):
+    frame = await run_in_threadpool(_video_step, token, "next_frame", index)
+    return Response(frame, media_type="image/png", headers={"Cache-Control": "no-store"}) if frame is not None else Response(status_code=204)
+
+
+@app.put("/api/webgpu/video/{token}/frames/{index}")
+async def video_result(token: str, index: int, file: UploadFile = File(...)):
+    try:
+        payload = await file.read(MAX_FRAME_BYTES + 1)
+    finally:
+        await file.close()
+    if len(payload) > MAX_FRAME_BYTES:
+        await cancel_video(token)
+        raise HTTPException(413, "확대 프레임 용량 제한을 넘었습니다.")
+    await run_in_threadpool(_video_step, token, "put_frame", index, payload)
+    return {"ok": True}
+
+
+@app.post("/api/webgpu/video/{token}/finish")
+async def finish_video(token: str):
+    output = await run_in_threadpool(_video_step, token, "finish")
+    job = video_jobs.pop(token)
+    return FileResponse(output, filename=output.name, background=BackgroundTask(job.close))
+
+
+@app.delete("/api/webgpu/video/{token}")
+async def cancel_video(token: str):
+    job = video_jobs.pop(token, None)
+    if job is not None:
+        def close():
+            with job.lock:
+                job.close()
+        await run_in_threadpool(close)
+    return {"ok": True}
 
 
 def _safe_name(name: str) -> str:

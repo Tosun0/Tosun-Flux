@@ -14,7 +14,7 @@
 - 파일 드래그 앤 드롭 및 파일별 삭제
 - 이미지·영상·PDF 최적화
 - 해상도(4K UHD·4K·QHD·FHD·HD·SD)·화면비·맞춤 방식·직접 픽셀 지정
-- 이미지·영상 2x/4x AI 업스케일(네이티브 Real-ESRGAN, 웹 이미지 ONNX WebGPU Real-ESRGAN)
+- 이미지·영상 2x/4x AI 업스케일(네이티브 Real-ESRGAN, 웹 ONNX WebGPU Real-ESRGAN)
 - 영상 프레임 변환과 PNG/JPG 프레임 시퀀스 추출
 - 파일별 해상도·프레임을 반영한 예상 용량 범위와 변환 후 실제 용량 표시
 - GitHub Releases 기반 업데이트 확인과 설치
@@ -96,6 +96,10 @@ Real-ESRGAN macOS portable 패키지는 공식 릴리즈의 `realesrgan-ncnn-vul
 
 Chrome·Edge의 이미지 2x/4x 확대 연산은 ONNX Runtime WebGPU와 Real-ESRGAN x4plus 모델로 사용자 GPU에서 처리합니다. 네이티브 4x PNG 결과를 서버에 전송한 뒤, 앱과 같은 Python 엔진이 2x Lanczos 축소·JPG 품질·WEBP 무손실·PNG 압축·파일명·ZIP 출력을 처리합니다. 따라서 WebGPU 사용 시에도 최종 저장에는 서버 연결과 이미지 전송이 필요하며, 서버의 업로드 제한이 적용됩니다. 브라우저에서 지원하지 않는 입력 디코더나 모델은 로컬 WebGPU로 처리할 수 없고, 서버 AI 엔진이 설치된 경우에만 서버 업스케일 옵션을 사용할 수 있습니다.
 
+영상 2x/4x WebGPU 업스케일은 앱의 영상 모델인 `realesr-animevideov3`의 [ONNX 변환본](https://huggingface.co/skillsafe-ai/realesr-animevideov3)을 사용합니다. 원본 영상을 서버에 업로드하면 FFmpeg가 지정 FPS로 프레임을 스트리밍하고, 브라우저는 한 프레임씩 GPU로 확대해 서버에 돌려보냅니다. 서버는 앱과 같은 인코딩·오디오 결합 코드를 사용해 MP4/WEBM/MOV/MKV/AVI/GIF 또는 PNG/JPG Sequence ZIP으로 저장합니다. 여러 영상은 순차 처리하며 파일별 다운로드 링크를 남깁니다. 모델 가중치가 같아도 ONNX·NCNN의 수치 정밀도 차이로 픽셀이 완전히 일치하는 것은 아닙니다.
+
+무료 웹 서버 보호를 위해 영상 업스케일은 입력 2,097,152픽셀(FHD급), 출력 8,388,608픽셀(4K UHD급), 길이 10분 이하이며 서버 전체에서 한 번에 한 영상만 처리합니다. 업로드·배치 결과에는 기존 용량 제한을 적용합니다. 완료·실패·페이지 이탈 시 임시 영상과 프로세스를 정리하며, 연결이 끊긴 작업은 20분 유휴 후 삭제합니다. 일반 영상 변환에는 이 업스케일 전용 제한을 적용하지 않습니다. WebGPU 지원 브라우저와 GPU 드라이버가 필요합니다.
+
 개발 환경에서는 다음 명령으로 실행합니다.
 
 ```powershell
@@ -114,7 +118,7 @@ docker run --rm -p 8080:8080 tosun-flux-web
 
 [Render에서 배포](https://render.com/deploy?repo=https://github.com/Tosun0/Tosun-Flux)를 누르면 저장소의 `render.yaml`로 웹 서비스를 생성할 수 있습니다.
 
-기본 컨테이너는 FFmpeg와 Poppler를 포함합니다. 웹 이미지 업스케일은 브라우저 WebGPU에서 동작하고, 영상·GIF 업스케일은 Vulkan GPU가 있는 서버에 Real-ESRGAN 실행 파일과 `models` 폴더를 함께 배치하고 `TOSUN_REALESRGAN_BIN`으로 실행 파일을 지정해야 활성화됩니다. 업로드 제한은 `TOSUN_WEB_MAX_FILE_MB`와 `TOSUN_WEB_MAX_REQUEST_MB`로 조정합니다.
+기본 컨테이너는 FFmpeg와 Poppler를 포함합니다. 웹 이미지·영상 업스케일은 브라우저 WebGPU에서 동작하므로 서버 GPU가 필요하지 않습니다. GIF 입력 또는 브라우저 미지원 이미지의 서버 업스케일에는 Vulkan GPU와 Real-ESRGAN 실행 파일·`models` 폴더·`TOSUN_REALESRGAN_BIN` 설정이 필요합니다. 업로드 제한은 `TOSUN_WEB_MAX_FILE_MB`와 `TOSUN_WEB_MAX_REQUEST_MB`로 조정합니다.
 
 웹 모델은 공식 Real-ESRGAN x4plus 가중치를 재현 가능하게 변환한 [SkillSafe ONNX 모델](https://huggingface.co/skillsafe-ai/realesrgan-x4plus)을 사용하며 원본과 동일한 BSD 3-Clause 라이선스를 따릅니다.
 

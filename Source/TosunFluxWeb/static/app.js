@@ -1,6 +1,5 @@
 const $=s=>document.querySelector(s);
-const state={files:[],busy:false,serverAi:false,clientAi:false,session:null,profile:null,maxFiles:0};
-const videoTargets=new Set(['mp4','webm','mov','mkv','avi','gif','png-sequence','jpg-sequence']);
+const state={files:[],busy:false,serverAi:false,clientAi:false,sessions:new Map(),videoJob:null,videoLimits:null,profile:null,maxFiles:0};
 const labels={source:'원본',quality:'고품질',balanced:'균형',small:'작은 용량',custom:'직접 지정',fit:'맞추기',fill:'채우기',stretch:'늘리기','4k':'4K','4k-uhd':'4K UHD',qhd:'QHD',fhd:'FHD',hd:'HD',sd:'SD',png:'PNG',jpg:'JPG',webp:'WEBP',bmp:'BMP',tiff:'TIFF',gif:'GIF',pdf:'PDF',txt:'TXT',md:'Markdown',csv:'CSV',json:'JSON',mp4:'MP4',webm:'WEBM',mov:'MOV',mkv:'MKV',avi:'AVI','png-sequence':'PNG Sequence',mp3:'MP3',wav:'WAV',flac:'FLAC',m4a:'M4A',ogg:'OGG','jpg-sequence':'JPG Sequence'};
 // Browser decoders are platform-specific; conversion/output rules come from the app engine.
 const clientImageExtensions=new Set(['png','jpg','jpeg','webp']);
@@ -8,6 +7,7 @@ const fileInput=$('#fileInput'),dropZone=$('#dropZone'),target=$('#target'),reso
 
 fetch('/api/health').then(r=>{if(!r.ok)throw new Error();return r.json()}).then(info=>{
     state.profile=info.profile;state.maxFiles=info.max_files;state.serverAi=info.ai_upscale;
+    state.videoLimits=info.webgpu_video;
     state.clientAi=Boolean(state.profile.upscale.webgpu_model_url&&navigator.gpu&&window.ort?.InferenceSession);
     $('#version').textContent='Tosun Flux Web · v'+info.version;
     $('#fileLimit').textContent='최대 '+state.maxFiles+'개';
@@ -34,7 +34,7 @@ for(const event of['dragleave','drop'])dropZone.addEventListener(event,e=>{e.pre
 dropZone.addEventListener('drop',e=>addFiles(e.dataTransfer.files));
 $('#clearButton').addEventListener('click',()=>{state.files=[];renderFiles();refreshTargets()});
 resolution.addEventListener('change',updateResolution);
-target.addEventListener('change',()=>{$('#fpsWrap').hidden=!videoTargets.has(target.value);refreshAiOptions()});
+target.addEventListener('change',()=>{$('#fpsWrap').hidden=!(state.files.length&&state.files.every(isVideo)&&state.profile.video_targets.includes(target.value));refreshAiOptions()});
 convertButton.addEventListener('click',convert);
 
 function addFiles(items){
@@ -71,7 +71,9 @@ async function refreshTargets(){
     }catch{setStatus('출력 형식을 확인하지 못했습니다.')}
     renderFiles();target.dispatchEvent(new Event('change'));
 }
-function canClientUpscale(){return state.clientAi&&state.files.length>0&&state.profile.image_targets.includes(target.value)&&state.files.every(file=>clientImageExtensions.has(file.name.split('.').pop().toLowerCase()))}
+function isVideo(file){return state.profile.video_extensions.includes('.'+file.name.split('.').pop().toLowerCase())}
+function canClientVideo(){return state.clientAi&&state.profile.upscale.webgpu_video_model_url&&state.files.length>0&&state.profile.video_targets.includes(target.value)&&state.files.every(isVideo)}
+function canClientUpscale(){return canClientVideo()||(state.clientAi&&state.files.length>0&&state.profile.image_targets.includes(target.value)&&state.files.every(file=>clientImageExtensions.has(file.name.split('.').pop().toLowerCase())))}
 function refreshAiOptions(){
     if(!state.profile)return;
     $('#engineBadge').textContent=state.clientAi?'WebGPU · 앱 엔진 저장':state.serverAi?'서버 AI 엔진':'일반 변환 모드';
@@ -90,9 +92,12 @@ async function convert(){
     const files=state.files.slice(),options={target:target.value,optimize:$('#optimize').value,resolution:custom||scale!==1?'source':resolution.value,aspect:custom||scale!==1?'source':$('#aspect').value,fit:document.querySelector('input[name=fit]:checked').value,fps:$('#fpsWrap').hidden?'source':$('#fps').value,scale_factor:scale};
     if(custom){options.width=$('#width').value;options.height=$('#height').value}
     const local=scale!==1&&canClientUpscale();
+    for(const link of $('#downloads').querySelectorAll('a'))URL.revokeObjectURL(link.href);
+    $('#downloads').replaceChildren();
     state.busy=true;renderFiles();convertButton.textContent=local?'업스케일 중…':'변환 중…';setProgress(0);
     try{
-        if(local){
+        if(local&&canClientVideo())await convertVideoWithWebGpu(files,options,scale);
+        else if(local){
             const upscaled=await convertWithWebGpu(files,scale);
             await convertOnServer(upscaled,{...options,scale_factor:1,fps:'source',webgpu_scale:scale});
         }else await convertOnServer(files,options);
@@ -111,13 +116,17 @@ async function convertWithWebGpu(files,scale){
     }
     return results;
 }
-async function webGpuSession(){
-    if(state.session)return state.session;
+async function webGpuSession(video=false){
+    const url=video?state.profile.upscale.webgpu_video_model_url:state.profile.upscale.webgpu_model_url;
+    if(state.sessions.has(url))return state.sessions.get(url);
+    // Only keep the active model in GPU memory.
+    for(const session of state.sessions.values())await session.release();
+    state.sessions.clear();
     ort.env.wasm.numThreads=1;ort.env.wasm.wasmPaths='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
-    state.session=await ort.InferenceSession.create(state.profile.upscale.webgpu_model_url,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
-    return state.session;
+    const session=await ort.InferenceSession.create(url,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
+    state.sessions.set(url,session);return session;
 }
-async function upscaleImage(file,scale,onProgress){
+async function upscaleImage(file,scale,onProgress,video=false){
     const bitmap=await createImageBitmap(file);
     try{
         const nativeScale=state.profile.upscale.native_scale,limit=state.profile.max_output_dimension;
@@ -127,7 +136,7 @@ async function upscaleImage(file,scale,onProgress){
         source.width=bitmap.width;source.height=bitmap.height;source.getContext('2d',{willReadFrequently:true}).drawImage(bitmap,0,0);
         // Keep the native output; the app engine performs the same 2x Lanczos reduction.
         output.width=bitmap.width*nativeScale;output.height=bitmap.height*nativeScale;
-        const sourceContext=source.getContext('2d',{willReadFrequently:true}),outputContext=output.getContext('2d'),session=await webGpuSession(),tileSize=64,padding=8,columns=Math.ceil(bitmap.width/tileSize),rows=Math.ceil(bitmap.height/tileSize),total=columns*rows;
+        const sourceContext=source.getContext('2d',{willReadFrequently:true}),outputContext=output.getContext('2d'),session=await webGpuSession(video),tileSize=64,padding=8,columns=Math.ceil(bitmap.width/tileSize),rows=Math.ceil(bitmap.height/tileSize),total=columns*rows;
         let completed=0;
         for(let y=0;y<bitmap.height;y+=tileSize){for(let x=0;x<bitmap.width;x+=tileSize){
             const coreWidth=Math.min(tileSize,bitmap.width-x),coreHeight=Math.min(tileSize,bitmap.height-y),left=Math.max(0,x-padding),top=Math.max(0,y-padding),right=Math.min(bitmap.width,x+coreWidth+padding),bottom=Math.min(bitmap.height,y+coreHeight+padding),width=right-left,height=bottom-top,image=sourceContext.getImageData(left,top,width,height),pixels=width*height,inputData=new Float32Array(pixels*3);
@@ -146,10 +155,50 @@ async function upscaleImage(file,scale,onProgress){
 }
 function channel(value){return Math.max(0,Math.min(255,Math.round(value*255)))}
 function downloadBlob(blob,name){
-    const link=$('#downloadLink'),previous=link.getAttribute('href');
-    if(previous)URL.revokeObjectURL(previous);
-    link.href=URL.createObjectURL(blob);link.download=name;link.hidden=false;link.textContent=name+' 다운로드';link.click();
+    const link=document.createElement('a');link.className='text-button';
+    link.href=URL.createObjectURL(blob);link.download=name;link.textContent=name+' 다운로드';$('#downloads').append(link);link.click();
 }
+async function checkedResponse(response){
+    if(response.ok)return response;
+    let message='서버 요청을 처리하지 못했습니다.';
+    try{const payload=await response.json();if(typeof payload.detail==='string')message=payload.detail}catch{}
+    throw new Error(message);
+}
+async function convertVideoWithWebGpu(files,options,scale){
+    if(files.reduce((bytes,file)=>bytes+file.size,0)>state.videoLimits.max_batch_bytes)throw new Error('이번 배치의 전체 영상 용량 제한은 '+formatBytes(state.videoLimits.max_batch_bytes)+'입니다. 파일을 나눠 주세요.');
+    let downloadedBytes=0;
+    setStatus('영상용 WebGPU 모델을 준비합니다. 첫 실행은 약 1.2MB를 다운로드합니다.');
+    $('#progressBar').classList.add('indeterminate');await webGpuSession(true);$('#progressBar').classList.remove('indeterminate');
+    for(let fileIndex=0;fileIndex<files.length;fileIndex++){
+        const file=files[fileIndex],data=new FormData();data.append('file',file,file.name);
+        for(const[key,value]of Object.entries({target:options.target,optimize:options.optimize,fps:options.fps,scale}))data.append(key,String(value));
+        setStatus(file.name+' · 원본 영상 업로드 및 프레임 준비 중');
+        const job=await (await checkedResponse(await fetch('/api/webgpu/video',{method:'POST',body:data}))).json();
+        state.videoJob=job.id;
+        const base='/api/webgpu/video/'+job.id;
+        try{
+            for(let index=0;;index++){
+                const response=await checkedResponse(await fetch(base+'/frames/'+index));
+                if(response.status===204)break;
+                const source=await response.blob();
+                setStatus(file.name+' · '+scale+'x WebGPU · 프레임 '+(index+1)+' / 약 '+job.frames+' · '+job.fps+' FPS');
+                const result=await upscaleImage(source,scale,amount=>setProgress((fileIndex+Math.min(.95,(index+amount)/job.frames*.95))/files.length*100),true);
+                const frame=new FormData();frame.append('file',result,'frame.png');
+                await checkedResponse(await fetch(base+'/frames/'+index,{method:'PUT',body:frame}));
+            }
+            setStatus(file.name+' · 오디오 결합 및 최종 저장 중');$('#progressBar').classList.add('indeterminate');
+            const response=await checkedResponse(await fetch(base+'/finish',{method:'POST'})),blob=await response.blob();
+            downloadedBytes+=blob.size;
+            if(downloadedBytes>state.videoLimits.max_batch_bytes)throw new Error('배치 결과 용량 제한을 넘었습니다. 이미 완료된 파일은 아래 링크에 남아 있습니다. 나머지 파일은 나눠 변환해 주세요.');
+            downloadBlob(blob,downloadName(response.headers.get('Content-Disposition'))||file.name+'.'+options.target);
+            setProgress((fileIndex+1)/files.length*100);$('#progressBar').classList.remove('indeterminate');
+        }finally{
+            await fetch(base,{method:'DELETE'}).catch(()=>{});state.videoJob=null;
+        }
+    }
+    setStatus(files.length+'개 영상 저장 완료. 자동 다운로드가 막혔다면 아래 결과 링크를 눌러 주세요.');
+}
+window.addEventListener('pagehide',()=>{if(state.videoJob)fetch('/api/webgpu/video/'+state.videoJob,{method:'DELETE',keepalive:true}).catch(()=>{})});
 function convertOnServer(files,options){
     const data=new FormData();files.forEach(file=>data.append('files',file,file.name));
     for(const[key,value]of Object.entries(options))data.append(key,String(value));

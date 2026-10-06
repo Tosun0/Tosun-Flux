@@ -70,6 +70,7 @@ FIT_MODES = ("fit", "fill", "stretch")
 FRAME_RATES = ("source", "23.976", "24", "25", "29.97", "30", "50", "59.94", "60")
 WEBGPU_MODELS = {
     "realesrgan-x4plus": "https://huggingface.co/skillsafe-ai/realesrgan-x4plus/resolve/main/model_fp16.onnx",
+    "realesr-animevideov3": "https://huggingface.co/skillsafe-ai/realesr-animevideov3/resolve/main/model_fp16.onnx",
 }
 
 ASPECTS = {
@@ -125,11 +126,12 @@ def source_metadata(path: Path) -> dict[str, object]:
         if tool is None:
             return metadata
         completed = subprocess.run(
-            [str(tool), "-hide_banner", "-i", str(path)],
+            [str(tool), "-hide_banner", "-protocol_whitelist", "file,pipe", "-i", str(path)],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=30,
         )
         probe = completed.stderr
         size_match = re.search(r"Video:.*?(\d{2,6})x(\d{2,6})", probe, re.IGNORECASE | re.DOTALL)
@@ -142,7 +144,7 @@ def source_metadata(path: Path) -> dict[str, object]:
         if duration_match:
             hours, minutes, seconds = duration_match.groups()
             metadata["duration"] = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-    except (OSError, ValueError):
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         pass
     return metadata
 
@@ -202,12 +204,16 @@ def conversion_profile() -> dict[str, object]:
         "fit_modes": FIT_MODES,
         "frame_rates": FRAME_RATES,
         "image_targets": supported_targets(Path("image.png")),
+        "video_extensions": sorted(VIDEO_EXTENSIONS - {".gif"}),
+        "video_targets": supported_targets(Path("video.mp4")),
         "max_output_dimension": MAX_OUTPUT_DIMENSION,
         "upscale": {
             "factors": [factor for factor in UPSCALE_FACTORS if factor != 1],
             "model": AI_UPSCALE_MODEL,
             "native_scale": AI_NATIVE_SCALE,
             "webgpu_model_url": WEBGPU_MODELS.get(AI_UPSCALE_MODEL),
+            "video_model": AI_ANIMATION_MODEL,
+            "webgpu_video_model_url": WEBGPU_MODELS.get(AI_ANIMATION_MODEL),
         },
     }
 
@@ -696,6 +702,27 @@ def _video_encoding_args(target: str, options: ConversionOptions) -> list[str]:
     return args
 
 
+def video_frame_encoder_args(source: Path, frame_input: str, target: str, options: ConversionOptions, fps: str) -> list[str]:
+    """Shared frame assembly, including optional source audio, for native and WebGPU."""
+    ffmpeg = bundled_tool("ffmpeg", "ffmpeg")
+    if ffmpeg is None:
+        raise ConversionError("FFmpeg를 찾을 수 없습니다.")
+    args = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-framerate", fps]
+    if frame_input == "pipe:0":
+        args.extend(["-f", "image2pipe", "-vcodec", "png"])
+    args.extend(["-protocol_whitelist", "file,pipe", "-i", frame_input])
+    if target != "gif":
+        args.extend(["-protocol_whitelist", "file,pipe", "-i", str(source), "-map", "0:v:0", "-map", "1:a?", "-shortest"])
+    args.extend(_video_encoding_args(target, options))
+    if frame_input == "pipe:0":
+        # Streaming on the free web host must not buffer dozens of 4K frames.
+        if target == "webm":
+            args.extend(["-lag-in-frames", "0"])
+        elif target not in {"gif", "avi"}:
+            args.extend(["-tune", "zerolatency"])
+    return args
+
+
 def _convert_ai_video(source: Path, output_dir: Path, target: str, options: ConversionOptions) -> ConversionResult:
     ffmpeg = bundled_tool("ffmpeg", "ffmpeg")
     if ffmpeg is None:
@@ -738,13 +765,7 @@ def _convert_ai_video(source: Path, output_dir: Path, target: str, options: Conv
                 outputs.append(output)
             return ConversionResult(source, tuple(outputs))
 
-        args = [
-            str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y",
-            "-framerate", fps, "-i", str(output_frames / "%08d.png"),
-        ]
-        if target != "gif":
-            args.extend(["-i", str(source), "-map", "0:v:0", "-map", "1:a?", "-shortest"])
-        args.extend(_video_encoding_args(target, options))
+        args = video_frame_encoder_args(source, str(output_frames / "%08d.png"), target, options, fps)
         args.append(str(destination))
         encoded = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if encoded.returncode:

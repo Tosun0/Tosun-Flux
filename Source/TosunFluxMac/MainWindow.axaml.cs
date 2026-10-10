@@ -14,7 +14,7 @@ namespace TosunFluxMac;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
-    private const string Version = "1.2.7";
+    private const string Version = "1.2.8";
     private readonly string _settingsPath;
     private string _target = "png";
     private bool _busy;

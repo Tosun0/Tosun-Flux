@@ -10,8 +10,8 @@
     <Authors>Tosun</Authors>
     <Product>Tosun Flux</Product>
     <Description>토순의 파일 컨버터 macOS edition</Description>
-    <Version>1.2.7</Version>
-    <InformationalVersion>1.2.7</InformationalVersion>
+    <Version>1.2.8</Version>
+    <InformationalVersion>1.2.8</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 

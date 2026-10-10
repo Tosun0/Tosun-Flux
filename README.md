@@ -2,7 +2,9 @@
 
 토순의 파일 컨버터입니다. Windows 네이티브 WPF GUI와 로컬 변환 백엔드로 동작합니다.
 
-현재 버전: `v1.2.7`
+현재 버전: `v1.2.8`
+
+`v1.2.8` 핫픽스: Windows에서 파일 추가·변환 시 진행률 표시의 양방향 바인딩 예외로 앱이 종료되는 문제를 수정했습니다.
 
 라이선스: [MIT License](LICENSE)
 
@@ -132,7 +134,10 @@ docker run --rm -p 8080:8080 tosun-flux-web
 python -m unittest discover -s Tests -v
 node Tests/test_web_queue.cjs
 dotnet run --project Tests/ConversionQueueSmoke.csproj -- <python> <backend.py> <input-dir>
+dotnet run --project Tests/WpfQueueBindingSmoke.csproj -- Source/TosunFlux/MainWindow.xaml
 ```
+
+Windows 진행률 회귀 검증은 앱의 실제 파일 목록 템플릿을 렌더링하고 대기·처리 중·완료·실패·재등록 상태를 확인합니다. 명령 뒤에 `<backend.exe> <scratch-dir>`를 추가하면 PNG → JPG 변환, 처리 중 파일 추가, 손상 파일 실패 처리까지 같은 WPF 템플릿으로 검증합니다.
 
 ## 배포
 

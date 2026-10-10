@@ -47,7 +47,7 @@ from TosunFluxConverter import (  # noqa: E402
 )
 from TosunFluxWebVideo import VideoUpscale, MAX_FRAME_BYTES, MAX_VIDEO_INPUT_PIXELS, MAX_VIDEO_OUTPUT_PIXELS, MAX_VIDEO_SECONDS, VIDEO_IDLE_SECONDS
 
-VERSION = "1.2.7"
+VERSION = "1.2.8"
 MAX_FILES = 20
 MAX_FILE_BYTES = int(os.environ.get("TOSUN_WEB_MAX_FILE_MB", "512")) * 1024 * 1024
 MAX_REQUEST_BYTES = int(os.environ.get("TOSUN_WEB_MAX_REQUEST_MB", "1024")) * 1024 * 1024
